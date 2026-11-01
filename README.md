@@ -2,6 +2,17 @@
 
 Game Engine profissional em Zig 0.17.0.
 
+## Editor e Runtime — implementação em andamento
+
+ADR e schemas aprovados; primeira fatia implementada em [`shared/`](shared/README.md): parser/serializer `.proj`, presets e DTO Zig↔C23, com testes independentes do build legado. **Os dois executáveis gráficos ainda não estão implementados.**
+
+- [Estrutura-alvo](docs/APPLICATION_LAYOUT.md)
+- [Progresso e evidências atuais](docs/APPLICATION_PROGRESS.md)
+- [Contrato `.proj` v1](docs/PROJECT_SCHEMA_V1.md)
+- [Contrato `presets.zon` v1](docs/PRESETS_SCHEMA_V1.md)
+
+As seções abaixo registram o estado histórico do core, não evidência de build/renderer nesta sessão. O build legado apresentou falha de resolução dos pacotes; consulte o relatório atual antes de assumir compilação limpa ou recursos gráficos funcionais.
+
 ## Status — Base Compilável (Fase 1 completa + evolução incremental)
 
 - Zigway v0.1.0-alpha.4 integrados (hash verificado)

@@ -1,0 +1,7 @@
+.{
+    .name = .corex_app,
+    .fingerprint = 0xc5015914b2e1b979,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.0",
+    .paths = .{ "build.zig", "build.zig.zon", "root.zig", "project.zig", "presets.zig", "validation.zig", "limits.zig", "contract_tests.zig", "fixtures", "graphics_abi.zig", "graphics_abi.h", "graphics_abi.c", "README.md" },
+}
