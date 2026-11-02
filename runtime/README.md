@@ -24,7 +24,7 @@ Esse comando lê o schema compartilhado, confere a identidade da distribuição,
 
 Sem `--validate-only`, inclusive com `--headless`, retorna erro de core indisponível (exit 4). Isso evita que uma simulação vazia seja apresentada como Player funcional. C++/Lua, loop fixed timestep, job system, hot reload e UI de jogo continuam pendentes; nenhuma UI de Editor é incorporada.
 
-O Runtime nunca grava `.proj`. Códigos de saída, opções e protocolo: [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Testes reais Editor→Runtime: `python tools/test_bootstrap.py` na raiz após compilar ambos. Testes nativos Windows ainda não estão disponíveis; cross-compilação não substitui execução nativa.
+O Runtime nunca grava `.proj`. Códigos de saída, opções e protocolo: [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Testes reais Editor→Runtime: `tools/.venv/bin/python tools/python/test_bootstrap.py` na raiz após compilar ambos. Testes nativos Windows ainda não estão disponíveis; cross-compilação não substitui execução nativa.
 
 ## Modelo de contabilidade de tempo (ainda não integrado)
 
