@@ -4,6 +4,11 @@
 
 ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
 
+## Continuação — streaming e carga do capturador em Zig
+
+- Os testes black-box agora também sincronizam o processo real por arquivo temporário para exigir que o primeiro byte seja transmitido **antes** do término do filho. O probe possui limite próprio; o processo do capturador é terminado e recolhido no cleanup. Outro teste usa arquivo temporário para verificar integralmente 2 MiB intercalados de stdout/stderr e a annotation com tail de 16 KiB, sem aumentar o limite de captura do supervisor.
+- Linux local: **11/11** testes Zig em Debug e ReleaseSafe, `check` cross Windows sem execução. A mutação que retirou o encaminhamento de saída causou falha específica do teste de streaming e foi revertida. Os testes Python permanecem para pressão/bloqueio de stdout, pipe quebrado, flags e descendentes; essa etapa não é Python zero nem execução Windows nativa.
+
 ## Continuação — testes black-box Zig do capturador
 
 - `tools/zig/test_capture_cli.zig` compila e invoca a CLI Linux real com ambiente controlado. Nove testes verificam lançamento/uso, bytes binários e ordem dos pipes, código/sinal, annotation e escaping, argumentos/PATH, tail limitado e UTF-8 cortado, timeout inválido sem iniciar o filho e timeout com filho resistente, pipe fechado e processo recolhido. Usam `/bin/sh`, `/bin/sleep` e `/proc`, sem Python. O probe tem limite próprio caso o capturador regrida; o supervisor possui prazo externo.

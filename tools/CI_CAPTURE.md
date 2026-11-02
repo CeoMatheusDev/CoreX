@@ -16,9 +16,9 @@ Após `cd tools/zig && zig build`, o contrato comum pode ser exercitado na raiz 
 
 ### Testes black-box Zig
 
-Em Linux, `cd tools/zig && zig build test-capture-cli --summary all` compila e testa a CLI real com nove testes black-box, em Debug por padrão ou `-Doptimize=ReleaseSafe`. Eles também rodam em `zig build test` e na validação nativa (`tools/zig` e raiz), sem Python e com resultados não cacheados. Exercitam status e sinais, output binário, annotations, PATH/argumentos, tail, UTF-8, timeout inválido antes do spawn e encerramento/recolhimento do filho imediato. Usam `/bin/sh`, `/bin/sleep` e `/proc` para probes Linux, com prazo externo limitado. O passo dedicado recusa cross e hosts não Linux; `check` compila sem executar.
+Em Linux, `cd tools/zig && zig build test-capture-cli --summary all` compila e testa a CLI real com onze testes black-box, em Debug por padrão ou `-Doptimize=ReleaseSafe`. Eles também rodam em `zig build test` e na validação nativa (`tools/zig` e raiz), sem Python e com resultados não cacheados. Exercitam status e sinais, output binário, annotations, PATH/argumentos, tail, UTF-8, timeout inválido antes do spawn, encerramento/recolhimento do filho imediato, streaming antes do fim do filho e carga intercalada de 2 MiB com tail limitado. Usam `/bin/sh`, `/bin/sleep` e `/proc` para probes Linux, com prazo externo limitado. O passo dedicado recusa cross e hosts não Linux; `check` compila sem executar.
 
-A cobertura ainda é parcial: streaming em tempo real, stdout bloqueado/pressão, pipe quebrado, flags dos descritores, descendentes mantendo o pipe e carga grande continuam na suíte Python. Não removê-la com base nestes nove testes.
+A cobertura ainda é parcial: stdout bloqueado/pressão, pipe quebrado, flags dos descritores e descendentes mantendo o pipe continuam na suíte Python. Não removê-la com base nestes testes.
 
 ### Prazo opcional do capturador Zig
 

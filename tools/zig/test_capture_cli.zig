@@ -189,3 +189,115 @@ test "timeout handles fast exit, normal status 124, and closed-pipe resistant ch
     defer a.free(proc_path);
     try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(io, proc_path, .{}));
 }
+
+extern fn corex_process_exited(id: u64) callconv(.c) i32;
+extern fn corex_process_force_terminate(id: u64) callconv(.c) i32;
+
+fn pollByte(fd: std.os.linux.fd_t, timeout_ms: u32) !u8 {
+    const linux = std.os.linux;
+    const deadline = std.Io.Clock.awake.now(io).nanoseconds + @as(i96, timeout_ms) * std.time.ns_per_ms;
+    while (true) {
+        const remaining = deadline - std.Io.Clock.awake.now(io).nanoseconds;
+        if (remaining <= 0) return error.PollTimeout;
+        var descriptors = [_]linux.pollfd{.{ .fd = fd, .events = linux.POLL.IN, .revents = 0 }};
+        const ms: i32 = @intCast(@divTrunc(remaining + std.time.ns_per_ms - 1, std.time.ns_per_ms));
+        const result = linux.poll(&descriptors, 1, ms);
+        switch (linux.errno(result)) {
+            .INTR => continue,
+            .SUCCESS => {},
+            else => return error.PollFailed,
+        }
+        if (result == 0) return error.PollTimeout;
+        if (descriptors[0].revents & linux.POLL.NVAL != 0) return error.InvalidPipe;
+        var byte: [1]u8 = undefined;
+        const count = linux.read(fd, &byte, byte.len);
+        switch (linux.errno(count)) {
+            .INTR => continue,
+            .SUCCESS => {},
+            else => return error.ReadFailed,
+        }
+        if (count != 1) return error.UnexpectedEndOfStream;
+        return byte[0];
+    }
+}
+
+test "output streams before child completion" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(io, &buf);
+    const marker = try std.fs.path.join(a, &.{ buf[0..n], "release marker" });
+    defer a.free(marker);
+    // Bound the probe independently: even on assertion failure or capture
+    // regression the grandchild cannot wait forever after our test exits.
+    const probe = "printf A; i=0; while [ ! -e \"$1\" ] && [ \"$i\" -lt 100 ]; do /bin/sleep 0.05; i=$((i+1)); done; [ -e \"$1\" ] || exit 9; printf B >&2";
+    var child = try std.process.spawn(io, .{
+        .exe = .{ .explicit = .{ .dir = .cwd(), .path = shell } },
+        .argv = &.{ shell, "-c", "unset COREX_CI_CAPTURE_TIMEOUT_MS; GITHUB_ACTIONS=false; export GITHUB_ACTIONS; exec \"$@\"", "capture-test", options.capture, shell, "-c", probe, "probe", marker },
+        .stdin = .ignore,
+        .stdout = .pipe,
+        .stderr = .ignore,
+    });
+    defer if (child.id != null) {
+        _ = corex_process_force_terminate(@intCast(child.id.?));
+        child.kill(io);
+    };
+    const id: u64 = @intCast(child.id.?);
+    const fd = child.stdout.?.handle;
+    try std.testing.expectEqual(@as(u8, 'A'), try pollByte(fd, 4000));
+    try std.testing.expectEqual(@as(i32, 0), corex_process_exited(id));
+    try tmp.dir.writeFile(io, .{ .sub_path = "release marker", .data = "" });
+    try std.testing.expectEqual(@as(u8, 'B'), try pollByte(fd, 4000));
+    const deadline = std.Io.Clock.awake.now(io).nanoseconds + 4000 * std.time.ns_per_ms;
+    while (true) {
+        const status = corex_process_exited(id);
+        if (status < 0) return error.NativeChildPollFailed;
+        if (status == 1) break;
+        if (std.Io.Clock.awake.now(io).nanoseconds >= deadline) return error.ChildExitTimeout;
+        try std.Io.sleep(io, .fromMilliseconds(5), .awake);
+    }
+    try std.testing.expectEqual(std.process.Child.Term{ .exited = 0 }, try child.wait(io));
+}
+
+test "large merged output is complete with a bounded annotation tail" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(io, &buf);
+    const output_path = try std.fs.path.join(a, &.{ buf[0..n], "capture output" });
+    defer a.free(output_path);
+    // Each 1024-byte chunk is written alternately to the two merged streams.
+    // The wrapper writes to a regular file so the supervisor's bounded pipes
+    // do not truncate the 2 MiB workload under test.
+    const script = "a=AAAAAAAA; b=BBBBBBBB; i=0; while [ $i -lt 7 ]; do a=$a$a; b=$b$b; i=$((i+1)); done; i=0; while [ $i -lt 1024 ]; do printf '%s' \"$a\"; printf '%s' \"$b\" >&2; i=$((i+1)); done; exit 3";
+    const argv = [_][]const u8{
+        shell,
+        "-c",
+        "unset COREX_CI_CAPTURE_TIMEOUT_MS; GITHUB_ACTIONS=true; export GITHUB_ACTIONS; output=$1; shift; exec \"$@\" > \"$output\"",
+        "capture-test",
+        output_path,
+        options.capture,
+        shell,
+        "-c",
+        script,
+    };
+    const result = try process.runCommand(a, io, shell, &argv, .inherit, 15_000);
+    defer process.release(a, result);
+    try exited(result, 3);
+    try std.testing.expectEqualStrings("", result.stdout);
+    try std.testing.expectEqualStrings("", result.stderr);
+    const output = try tmp.dir.readFileAlloc(io, "capture output", a, .limited(3 * 1024 * 1024));
+    defer a.free(output);
+    const bytes: usize = 2 * 1024 * 1024;
+    const prefix = "\n::error title=CI command failed::exit 3: ";
+    try std.testing.expectEqual(bytes + prefix.len + limit + 1, output.len);
+    for (output[0..bytes], 0..) |byte, i| {
+        const expected: u8 = if ((i / 1024) % 2 == 0) 'A' else 'B';
+        if (byte != expected) return error.MergedOutputMismatch;
+    }
+    try std.testing.expectEqualStrings(prefix, output[bytes..][0..prefix.len]);
+    try std.testing.expectEqualSlices(u8, output[bytes - limit .. bytes], output[bytes + prefix.len ..][0..limit]);
+    try std.testing.expectEqual(@as(u8, '\n'), output[output.len - 1]);
+}
