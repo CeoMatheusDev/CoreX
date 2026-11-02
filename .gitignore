@@ -6,3 +6,7 @@ zig-out/
 
 .venv/
 .cache/
+
+# Local Python tooling caches
+__pycache__/
+*.py[cod]

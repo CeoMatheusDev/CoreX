@@ -22,12 +22,12 @@ fn versionMatches(term: std.process.Child.Term, stdout: []const u8) bool {
     return std.mem.eql(u8, std.mem.trim(u8, stdout, " \t\r\n"), "0.17.0");
 }
 
-fn check(a: Allocator, io: Io, zig: []const u8, root: Io.Dir) !void {
+fn check(a: Allocator, io: Io, zig: []const u8, root: Io.Dir, output: ?Io.File) !void {
     if (!std.fs.path.isAbsolute(zig)) return error.AbsoluteZigPathRequired;
     const version = try process.runCommand(a, io, zig, &.{ zig, "version" }, .{ .dir = root }, 10_000);
     defer process.release(a, version);
     if (!versionMatches(version.term, version.stdout)) {
-        std.debug.print("Expected Zig 0.17.0; got: {s}\nstderr: {s}\n", .{ version.stdout, version.stderr });
+        if (output != null) std.debug.print("Expected Zig 0.17.0; got: {s}\nstderr: {s}\n", .{ version.stdout, version.stderr });
         return error.UnsupportedZigVersion;
     }
     for (packages) |package| {
@@ -37,17 +37,19 @@ fn check(a: Allocator, io: Io, zig: []const u8, root: Io.Dir) !void {
             const target_option = try std.fmt.allocPrint(a, "-Dtarget={s}", .{target});
             defer a.free(target_option);
             const result = process.runCommand(a, io, zig, &.{ zig, "build", "check", target_option, "-j2" }, .{ .dir = cwd }, timeout_ms) catch |err| {
-                std.debug.print("Target check failed for {s}/{s}: {s}\n", .{ package, target, @errorName(err) });
+                if (output != null) std.debug.print("Target check failed for {s}/{s}: {s}\n", .{ package, target, @errorName(err) });
                 return err;
             };
             defer process.release(a, result);
             if (!expectedRejection(result.term, result.stderr)) {
-                std.debug.print("Unexpected result for {s}/{s}: {f}\nstderr:\n{s}\nstdout:\n{s}\n", .{ package, target, result.term, result.stderr, result.stdout });
+                if (output != null) std.debug.print("Unexpected result for {s}/{s}: {f}\nstderr:\n{s}\nstdout:\n{s}\n", .{ package, target, result.term, result.stderr, result.stdout });
                 return error.WrongTargetRejection;
             }
-            var buf: [160]u8 = undefined;
-            const line = try std.fmt.bufPrint(&buf, "OK: {s} rejects {s} explicitly\n", .{ package, target });
-            try Io.File.stdout().writeStreamingAll(io, line);
+            if (output) |file| {
+                var buf: [160]u8 = undefined;
+                const line = try std.fmt.bufPrint(&buf, "OK: {s} rejects {s} explicitly\n", .{ package, target });
+                try file.writeStreamingAll(io, line);
+            }
         }
     }
 }
@@ -85,7 +87,7 @@ fn run(init: std.process.Init) !void {
     if (!std.fs.path.isAbsolute(zig)) return error.AbsoluteZigPathRequired;
     var dir = try Io.Dir.cwd().openDir(init.io, root, .{});
     defer dir.close(init.io);
-    try check(init.gpa, init.io, zig, dir);
+    try check(init.gpa, init.io, zig, dir, Io.File.stdout());
 }
 
 test "only a normal nonzero exit with the target diagnostic is accepted" {
@@ -100,4 +102,81 @@ test "exact Zig version is mandatory" {
     try std.testing.expect(!versionMatches(.{ .exited = 0 }, "0.16.0\n"));
     try std.testing.expect(!versionMatches(.{ .exited = 1 }, "0.17.0\n"));
     try std.testing.expect(!versionMatches(.{ .unknown = 3 }, "0.17.0"));
+}
+
+fn writeFakeCompiler(dir: Io.Dir, name: []const u8, script: []const u8) ![:0]u8 {
+    try dir.writeFile(std.testing.io, .{
+        .sub_path = name,
+        .data = script,
+        .flags = .{ .permissions = .executable_file },
+    });
+    return dir.realPathFileAlloc(std.testing.io, name, std.testing.allocator);
+}
+
+test "subprocess checks enforce version, exit status, diagnostics, arguments and cwd" {
+    // Synthetic process probes are Linux-only; real builds also run in CI.
+    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var root = try tmp.dir.createDirPathOpen(io, "Projeto ação", .{});
+    defer root.close(io);
+    try root.createDirPath(io, "editor");
+    try root.createDirPath(io, "runtime");
+    try root.writeFile(io, .{ .sub_path = "editor/marker", .data = "" });
+    try root.writeFile(io, .{ .sub_path = "runtime/marker", .data = "" });
+    const valid = try writeFakeCompiler(root, "valid-zig",
+        \\#!/bin/sh
+        \\if [ "$1" = version ]; then echo 0.17.0; exit 0; fi
+        \\if [ "$1" != build ] || [ "$2" != check ] || [ "$4" != -j2 ] || [ ! -f marker ]; then exit 20; fi
+        \\case "$3" in -Dtarget=aarch64-macos|-Dtarget=x86_64-freebsd|-Dtarget=wasm32-wasi) ;; *) exit 21 ;; esac
+        \\printf '%s\n' "$3" >> ../calls
+        \\echo 'Unsupported application target:' >&2
+        \\exit 1
+        \\
+    );
+    defer a.free(valid);
+    try check(a, io, valid, root, null);
+    const calls = try root.readFileAlloc(io, "calls", a, .limited(1024));
+    defer a.free(calls);
+    try std.testing.expectEqualStrings(
+        "-Dtarget=aarch64-macos\n-Dtarget=x86_64-freebsd\n-Dtarget=wasm32-wasi\n" ++
+            "-Dtarget=aarch64-macos\n-Dtarget=x86_64-freebsd\n-Dtarget=wasm32-wasi\n",
+        calls,
+    );
+    const bad_version = try writeFakeCompiler(root, "old-zig",
+        \\#!/bin/sh
+        \\echo 0.16.0
+        \\
+    );
+    defer a.free(bad_version);
+    try std.testing.expectError(error.UnsupportedZigVersion, check(a, io, bad_version, root, null));
+    const false_success = try writeFakeCompiler(root, "false-success",
+        \\#!/bin/sh
+        \\if [ "$1" = version ]; then echo 0.17.0; exit 0; fi
+        \\echo 'Unsupported application target:' >&2
+        \\exit 0
+        \\
+    );
+    defer a.free(false_success);
+    try std.testing.expectError(error.WrongTargetRejection, check(a, io, false_success, root, null));
+    const bad_message = try writeFakeCompiler(root, "bad-message",
+        \\#!/bin/sh
+        \\if [ "$1" = version ]; then echo 0.17.0; exit 0; fi
+        \\echo 'other compiler error' >&2
+        \\exit 3
+        \\
+    );
+    defer a.free(bad_message);
+    try std.testing.expectError(error.WrongTargetRejection, check(a, io, bad_message, root, null));
+    const stdout_only = try writeFakeCompiler(root, "stdout-only",
+        \\#!/bin/sh
+        \\if [ "$1" = version ]; then echo 0.17.0; exit 0; fi
+        \\echo 'Unsupported application target:'
+        \\exit 3
+        \\
+    );
+    defer a.free(stdout_only);
+    try std.testing.expectError(error.WrongTargetRejection, check(a, io, stdout_only, root, null));
 }
