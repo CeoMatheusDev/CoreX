@@ -46,9 +46,22 @@ Veja [APPLICATION_PROGRESS.md](docs/APPLICATION_PROGRESS.md) para evidências, l
 ### Requisitos
 
 - Zig **0.17.0**. Não use outra versão sem atualizar e validar o toolchain do projeto.
-- Python 3 para os scripts de verificação e integração.
+- Python 3.12 para ferramentas auxiliares de desenvolvimento; não é requisito dos executáveis do produto.
 - Compilador C compatível com C23 e linker do alvo.
 - No Linux, os pacotes de desenvolvimento exigidos pelo build legado (incluindo X11 quando aplicável).
+
+### Ferramentas auxiliares isoladas
+
+Os scripts de verificação, integração e preparação de dependências ficam em `tools/python/`. Para evitar poluir o Python do sistema ou de outros projetos, crie um ambiente virtual exclusivo do CoreX:
+
+```sh
+python3 -m venv tools/.venv
+tools/.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r tools/python/requirements-zig.txt
+tools/.venv/bin/python -m ziglang version
+tools/.venv/bin/python tools/python/check_contract_fixtures.py
+```
+
+O ambiente `tools/.venv/` é local e ignorado pelo Git. Não instale as dependências do CoreX globalmente. Os binários Editor/Runtime não importam Python e não precisam desse ambiente para execução. Consulte [tools/python/README.md](tools/python/README.md) para a lista de scripts e comandos de teste.
 
 ### Compilar os pacotes independentes
 
