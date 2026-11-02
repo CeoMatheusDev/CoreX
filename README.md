@@ -58,6 +58,7 @@ Os scripts de verificação, integração e preparação de dependências ficam 
 python3 -m venv tools/.venv
 tools/.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r tools/python/requirements-zig.txt
 tools/.venv/bin/python -m ziglang version
+tools/.venv/bin/python tools/python/check_tooling_boundary.py
 tools/.venv/bin/python tools/python/check_contract_fixtures.py
 ```
 
