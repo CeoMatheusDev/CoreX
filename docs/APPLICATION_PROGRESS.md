@@ -4,6 +4,25 @@
 
 ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
 
+## Continuação — streaming e carga do capturador em Zig
+
+- Os testes black-box agora também sincronizam o processo real por arquivo temporário para exigir que o primeiro byte seja transmitido **antes** do término do filho. O probe possui limite próprio; o processo do capturador é terminado e recolhido no cleanup. Outro teste usa arquivo temporário para verificar integralmente 2 MiB intercalados de stdout/stderr e a annotation com tail de 16 KiB, sem aumentar o limite de captura do supervisor.
+- Linux local: **11/11** testes Zig em Debug e ReleaseSafe, `check` cross Windows sem execução. A mutação que retirou o encaminhamento de saída causou falha específica do teste de streaming e foi revertida. Os testes Python permanecem para pressão/bloqueio de stdout, pipe quebrado, flags e descendentes; essa etapa não é Python zero nem execução Windows nativa.
+
+## Continuação — testes black-box Zig do capturador
+
+- `tools/zig/test_capture_cli.zig` compila e invoca a CLI Linux real com ambiente controlado. Nove testes verificam lançamento/uso, bytes binários e ordem dos pipes, código/sinal, annotation e escaping, argumentos/PATH, tail limitado e UTF-8 cortado, timeout inválido sem iniciar o filho e timeout com filho resistente, pipe fechado e processo recolhido. Usam `/bin/sh`, `/bin/sleep` e `/proc`, sem Python. O probe tem limite próprio caso o capturador regrida; o supervisor possui prazo externo.
+- Os testes integram `zig build test`, `test-capture-cli` e `validate` do tooling (e a validação raiz), sem reaproveitar sucesso em cache. O passo dedicado recusa alvo cross ou host não Linux; `check` compila para Windows sem execução. A suíte Python permanece: ainda cobre streaming, pressão em stdout, pipe quebrado, flags, descendentes e carga que estes testes não substituem.
+- Linux local: **9/9** testes Zig Debug e ReleaseSafe, `validate` tooling **44/44** em ambos os modos com PATH vazio e `validate` raiz Debug e ReleaseSafe com PATH vazio. A suíte Python preservada passou **23/23** para cada modo do capturador. Duas mutações controladas de escaping e timeout zero foram detectadas e revertidas. Windows foi apenas cross-compilado; a CI desta branch ainda não foi executada remotamente.
+
+## Continuação — revisão do main e capturador Zig na CI Linux
+
+- O PR [#8](https://github.com/CeoMatheusDev/CoreX/pull/8) foi integrado; os dois checks passaram. No merge, as CIs de [contratos](https://github.com/CeoMatheusDev/CoreX/actions/runs/41388162671) e [legado](https://github.com/CeoMatheusDev/CoreX/actions/runs/41388162668) passaram. Ambas reportaram depreciação do Node 20 em checkout/setup-python; não havia PRs abertos na revisão.
+- As actions foram atualizadas para v6 com SHA completo e Node 24; o checkout não persiste credenciais. O workflow Linux de contratos passa a usar o capturador Zig Debug após o build e os testes, mantendo a referência e os testes Python. Nenhum timeout próprio foi habilitado; continua o prazo do job. Esta alteração ainda precisa de CI remota; Python e `yamllint` ainda são necessários para outras validações.
+- Linux local: contrato do capturador **23/23** em Debug e ReleaseSafe e smoke POSIX sem Python nos dois modos. Via capturador Zig passaram Shared **49/49** Debug/ReleaseSafe, Editor **2/2** e Runtime **16/16** Debug, Runtime **16/16** ReleaseSafe, build dos bootstraps e testes de processos **29/29** em cada modo. Headers C++20 e compilação cruzada Windows de Shared/Editor/Runtime também passaram; Windows não foi executado nativamente. A sintaxe YAML e o guard de inventário passaram.
+
+As seções seguintes registram evidências e pendências na época de cada fatia; resultados de CI posteriores estão nesta continuação e em `docs/PYTHON_REMOVAL.md`.
+
 ## Continuação — testes black-box das fixtures em Zig
 
 - `tools/zig/test_fixture_cli.zig` exercita a CLI Zig compilada com cópias isoladas dos nove arquivos reais, cwd diferente e caminho com espaços/acentos. Os 11 testes agrupam os casos da suíte diferencial: pares divergentes, cada arquivo ausente, JSON inválido, versões, backends, hash, shapes, duplicatas e escapes, argumentos, diagnóstico sem conteúdo e limite de 4 MiB. O supervisor mantém timeout de 20 s e captura limitada; os dados originais não são alterados.

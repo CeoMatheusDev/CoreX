@@ -75,9 +75,10 @@ CoreX/
 │   ├── test_zig_validate.sh       # [atual] regressão de execução e cache da validação Zig
 │   ├── check_contract_fixtures.py  # [atual] referência Python para testes diferenciais
 │   ├── test_fixture_checkers.py    # [atual] comparação de CLIs em árvore temporária
-│   ├── zig/                       # [atual] validadores, teste CLI, extrator e captura experimental
-│   ├── ci_capture.py              # [atual] tail limitado de falhas em annotations GitHub
-│   ├── test_ci_capture.py         # [atual] streaming, status e limpeza do capturador
+│   ├── zig/                       # [atual] validadores, teste CLI, extrator e captura Linux
+│   ├── ci_capture.py              # [referência] tail limitado de falhas em annotations GitHub
+│   ├── test_ci_capture.py         # [atual] contrato Python e Zig: streaming, status e limpeza
+│   ├── test_ci_capture_smoke.sh   # [atual] smoke do capturador Zig sem Python
 │   ├── CI_CAPTURE.md              # [atual] contrato e limites da ferramenta de CI
 │   └── test_bootstrap.py           # [atual] contratos entre executáveis e probes adversariais
 ├── .github/workflows/
@@ -101,6 +102,6 @@ Parsing/resolução de presets não equivalem a resolução de recursos por file
 - P08 — plataforma/Zigway/ZyntraUI: superfícies/input/DPI Windows/Linux e capacidades reais por backend; melhorias upstream autorizadas.
 - P10/P15 — aplicações: persistência atômica/backup/conflitos, logger concorrente/frame, UI, ciclo de Play ao vivo e encerramento seguro inclusive fechamento do Editor. CLI/logs síncronos/builds/validação por filho foram entregues parcialmente.
 - P14 — aplicações: NFC completa e resolução segura por filesystem/links/caixa. Caminhos não ASCII no documento falham explicitamente até sua implementação; nomes de projeto e caminho CLI ao `.proj` podem ser Unicode.
-- P16 — build/CI: distribuição verificável Zig 0.17.0 Windows e testes nativos dos três SOs. Há cross-compilação, não execução Windows.
+- P16 — build/CI: distribuição verificável Zig 0.17.0 Windows e testes nativos nos dois SOs. Há cross-compilação, não execução Windows.
 
 Comandos e limitações: `APPLICATION_CLI.md`, `shared/README.md`, READMEs das aplicações. Evidências por etapa: `APPLICATION_PROGRESS.md`.
