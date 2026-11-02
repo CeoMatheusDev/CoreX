@@ -1,6 +1,6 @@
-> **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
-
 # CoreXEditor
+
+> **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
 
 CoreXEditor is a standalone Zig 0.17.0 + C23 project-validation bootstrap. **It is not yet a graphical Editor.** This executable does not link the legacy CoreX Engine, Zigway, or ZyntraUI; those integrations remain separate work.
 

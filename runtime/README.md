@@ -1,6 +1,6 @@
-> **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
-
 # CoreXRuntime
+
+> **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
 
 CoreXRuntime is a standalone Zig 0.17.0 + C23 project-validation bootstrap. **It does not execute games.** It does not link the legacy Engine, create a window or graphics device, or start a gameplay loop. Zigway remains the intended windowing dependency for future graphical integration.
 
