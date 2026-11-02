@@ -1,8 +1,22 @@
-# Editor/Runtime — progresso de implementação
+# Editor/Runtime — registro de progresso
 
-**Data:** 2026-11-01. **Branch:** `arena/25c6e700-corex`.
+**Atualizado:** 2026-11-02. Este arquivo é um registro cronológico de evidências por etapa, não um checklist de conclusão. Contagens e estados de CI em cada seção descrevem o momento em que aquela etapa foi registrada; não substituem a validação atual.
 
-ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
+## Estado mais recente registrado
+
+- O build raiz fixa Zigway `v0.1.0-alpha.4` e ZyntraUI `v1.44.1`. Os adaptadores existentes de Zigway têm testes headless; isso não valida janelas nativas nem Vulkan.
+- Editor e Runtime mantêm builds/testes próprios. Seus módulos de projeto, CLI e descoberta não equivalem a Editor/Runtime gráficos nem a carregadores completos de conteúdo.
+- O Editor/Runtime ainda não têm Surface Vulkan, Device, Swapchain ou apresentação validados. A integração depende de API upstream revisada e validação nativa; não foram alterados pins para contornar essa dependência.
+- Para o estado resumido, consulte [`STATUS.md`](STATUS.md); para contratos e fronteiras, consulte [`ARCHITECTURE.md`](ARCHITECTURE.md). Abaixo, cada seção preserva o contexto histórico da respectiva fatia.
+- Revisão documental desta fatia: criados o índice `docs/README.md` e o guia `CONTRIBUTING.md`, corrigida a colisão ADR-004/ADR-005, removidas alegações de protótipo tratadas como produto e atualizados status, arquitetura, integrações e registros históricos. As checagens locais encontraram 0 links Markdown internos quebrados e 0 problemas na hierarquia de títulos em 37 arquivos; `git diff --check` passou.
+- `zig fmt --check` passou nos demais arquivos Zig rastreados quando esses três arquivos problemáticos foram excluídos. A checagem global ainda falha ao analisar `src/ecs/system.zig`, `src/memory/allocator.zig` e `src/scripting/lua_allocator.zig`; não foram reescritos porque exigiriam revisão de contrato dos módulos legados.
+- Testes nativos Linux independentes passaram em Debug e ReleaseSafe: Shared **62/62**, Editor **36/36**, Runtime **16/16** e `tools/zig` **51/51**. Esses resultados não incluem a build raiz nem validam janela nativa/Vulkan.
+- `zig build check -Dtarget=x86_64-windows-gnu` compilou Shared, Editor, Runtime e `tools/zig`. Isso é cross-compilação; nenhum executável Windows foi executado.
+- As builds instaladas nativas do Editor e Runtime passaram, e `tools/test_bootstrap.py` passou **33/33** testes contra os binários reais, incluindo handshake entre processos. Isso valida o protocolo de bootstrap, não gameplay, UI ou renderização GPU.
+- A CI remota passou em Contracts e Legacy Linux para a revisão inicial do PR: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542060627) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542061137). Após registrar os resultados, a revisão documental `320afac` também passou em ambos: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287660) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287419).
+- `zig build test -j2` na raiz não pôde resolver os pins de Zigway/ZyntraUI por `ResolvConfParseFailed`. Não alterei `/etc/resolv.conf`, dependências ou hashes; a build raiz não foi validada nesta fatia.
+
+## Registro cronológico
 
 ## Continuação — versionamento de produto CoreX (2026-11-02)
 

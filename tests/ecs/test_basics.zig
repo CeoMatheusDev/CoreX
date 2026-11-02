@@ -7,5 +7,5 @@ pub fn main() !void {
     const e2 = world.createEntity();
     std.debug.assert(e1 == 1);
     std.debug.assert(e2 == 2);
-    std.debug.print("ECS básico OK: entidades {d} e {d}\n", .{e1, e2});
+    std.debug.print("ECS básico OK: entidades {d} e {d}\n", .{ e1, e2 });
 }

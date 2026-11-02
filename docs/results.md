@@ -1,64 +1,22 @@
-# CoreX Engine — Fase 1 — Resultados
+# Snapshot arquivado do protótipo — 2026-11-01
 
-## Ambiente
-- Zig 0.17.0 confirmado (`zig version`).
-- Diretório do projeto: `/home/matheus/Documentos/ProjectOpenCode/CoreX/` (criado do zero, pois `CoreXEngine` existia vazio).
+> **Registro histórico, não status atual.** Este documento preserva o contexto do primeiro protótipo da árvore legada. É superado por [`STATUS.md`](STATUS.md), [`APPLICATION_PROGRESS.md`](APPLICATION_PROGRESS.md) e pela [arquitetura atual](ARCHITECTURE.md). As notas originais usavam caminhos locais e descreviam módulos planejados ou placeholders de forma ampla; essas afirmações não são mantidas como evidência de funcionalidade atual.
 
-## Arquitetura Implementada
-- Data-Oriented Design planejado; ECS preparado para Fase 5.
-- Modularidade confirmada: cada sistema em pasta independente (`core`, `memory`, `project`, `graphics` etc.).
+## Escopo do protótipo
 
-## Estrutura de Diretórios
-```
-CoreX/
-├── build.zig / build.zig.zon
-├── docs/architecture/initial.md
-├── config/defaults/
-├── src/
-│   ├── main.zig (runtime)
-│   ├── core/{engine,lifecycle,version}.zig
-│   ├── memory/allocator.zig
-│   ├── project/{loader,config}.zig
-│   └── ... (outros módulos preparados)
-├── tests/test_core.zig
-├── test_project/TestProject.proj
-├── README.md
-└── build.zig.zon
-```
+A árvore inicial estabeleceu uma build Zig 0.17.0 e uma pequena demonstração executável. Diretórios de código-fonte foram criados para ciclo de vida do core, memória, configuração de projeto, ECS, eventos/jobs, gráficos, scripting, áudio, animação, cenas, serialização, assets e profiling. A presença de diretórios ou arquivos não significava que cada subsistema tivesse implementação de produção ou estivesse conectado a um jogo em execução.
 
-## Sistemas Funcionais
-- **Core System**: Engine inicia, para, executa tick. Lifecycle com estados (Init, Running, Stopped).
-- **Memory Management**: ArenaAllocator, LinearAllocator, FrameAllocator, PoolAllocator, MemoryTracker com estatísticas.
-- **Project Loader**: Interface funcional (`load`) que retorna `ProjectConfig`. Documento técnico: leitura de arquivo `.proj` precisa de adaptação à API `std.Io.Dir` introduzida no Zig 0.17.0; base funcional implementada com configuração padrão e validação.
-- **Parser .proj**: Estrutura `ProjectConfig` definida e validada (nome, versão, engine, gráfico, física, scripting, cenas).
-- **Engine Runtime**: `CoreXEngine --project` simulado; inicialização via arquivo `.proj` validada com dados reais.
+## Correções importantes ao registro inicial
 
-## Compilação
-- `zig build` — sucesso.
-- Executável gerado: `zig-out/bin/CoreXEngine` (~10MB).
-- Execução: imprime dados do projeto, inicia e para corretamente.
+- O `ProjectLoader` legado retornava configuração de exemplo/fallback; naquele momento, não era um parser completo de arquivos `.proj`.
+- O caminho visível do renderer usava o Null Backend. Não submetia trabalho à GPU nem apresentava frames.
+- O executável `CoreXEngine` legado demonstrava a ligação de módulos; não representava os bootstraps atuais de Editor/Runtime, o carregamento completo de projetos ou a execução de gameplay.
+- As notas iniciais sobre allocators, scripting e plataforma descreviam protótipos, não garantias de API ou release.
+- A expressão antiga “Fase 1 completa” não indicava um release de produto. A autoridade atual de versão e mudanças é [`../VERSION`](../VERSION) e [`../CHANGELOG.md`](../CHANGELOG.md).
 
-## Testes
-- `tests/test_core.zig` — `zig build test` retorna `0` (sucesso).
+## Fontes atuais
 
-## Problemas Encontrados
-- `GeneralPurposeAllocator` removido no Zig 0.17.0; substituído por `std.heap.page_allocator` para testes iniciais.
-- `std.fs.cwd()` substituído por `std.Io.Dir` no Zig 0.17.0; loader simplificado com configuração padrão até atualização completa do parser de arquivo.
-- `ExecutableOptions` mudou: `root_module` substitui `root_source_file` diretamente; `createModule` aceita `.target` e `.optimize`.
-
-## Dependências
-- Nenhuma biblioteca externa. Apenas Zig 0.17.0 stdlib.
-- Justificativa: a engine deve ser independente e com controle total de memória e renderização.
-
-## Próxima Etapa Recomendada
-**Fase 2 — Platform Foundation**:
-- Implementar `Window System` (abstração Linux/Windows).
-- Implementar `Input System` (teclado, mouse, gamepad).
-- Implementar `Event System` e `Platform Abstraction`.
-- Corrigir o parser `.proj` para leitura completa de arquivo usando `std.Io.Dir`.
-
----
-
-Documentado por: Assistente de Desenvolvimento
-Data: 2026-11-01
-Marco da fase: Fase 1 completa (o antigo `0.1.0` nesta linha não é versão nem release de produto; a autoridade atual é [`../VERSION`](../VERSION)).
+- Build do repositório e limites do produto: [`../README.md`](../README.md)
+- Fronteiras atuais de aplicação e gráficos: [`STATUS.md`](STATUS.md) e [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- Evidências de implementação do Editor/Runtime: [`APPLICATION_PROGRESS.md`](APPLICATION_PROGRESS.md)
+- Versionamento do produto: [`../VERSIONING.md`](../VERSIONING.md)
