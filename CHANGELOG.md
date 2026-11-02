@@ -10,6 +10,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 - Improved the CoreX Zigway adapters with explicit platform options and forwarding for window, event, input, and capability operations; added headless integration tests.
 - Replaced obsolete Zigway tests and connected the adapter test artifact to the root test step.
 - Reorganized and clarified project READMEs, architecture/status documentation, and the ADR index.
+- Recovered the legacy ECS system contract and the legacy memory and Lua allocator modules for Zig 0.17.0; they are now compiled and covered by 15 new tests, and their paths are part of the formatting gate. They remain unused by the Editor, Runtime, and legacy executable.
 - Preserved package SemVer, `.proj` schema versions, renderer contract, graphics ABI, dependency pins, and Zig 0.17.0 as separate version domains.
 
 No product release is created by an Unreleased entry. Release procedures are defined in [`VERSIONING.md`](VERSIONING.md).

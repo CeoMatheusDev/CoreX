@@ -9,6 +9,11 @@ const Renderer = @import("graphics/renderer/render.zig").Renderer;
 test {
     _ = @import("events/event.zig");
     _ = @import("zigway_input_tests.zig");
+    // Modules recovered for Zig 0.17.0 are compiled and tested here so they
+    // cannot silently drift out of the toolchain again.
+    _ = @import("ecs/system.zig");
+    _ = @import("memory/allocator.zig");
+    _ = @import("scripting/lua_allocator.zig");
 }
 
 test "legacy engine exposes the complete build-injected product version" {

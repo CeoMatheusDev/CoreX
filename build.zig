@@ -33,15 +33,17 @@ pub fn build(b: *std.Build) void {
 
         const format = b.addRunFile(.zig_exe);
         format.addArgs(&.{
-            "fmt",                          "--check",
-            "build.zig",                    "src/legacy_tests.zig",
-            "src/zigway_input_tests.zig",   "src/platform/zigway.zig",
-            "src/window/zigway.zig",        "tests/test_zigway.zig",
-            "src/jobs/job_system.zig",      "src/events/event.zig",
-            "src/main.zig",                 "src/graphics/renderer/render.zig",
-            "tests/events/test_basics.zig", "tests/integration/engine_pipeline.zig",
-            "shared",                       "editor",
-            "runtime",                      "tools/zig",
+            "fmt",                                   "--check",
+            "build.zig",                             "src/legacy_tests.zig",
+            "src/zigway_input_tests.zig",            "src/platform/zigway.zig",
+            "src/window/zigway.zig",                 "tests/test_zigway.zig",
+            "src/jobs/job_system.zig",               "src/events/event.zig",
+            "src/ecs/system.zig",                    "src/memory/allocator.zig",
+            "src/scripting/lua_allocator.zig",       "src/main.zig",
+            "src/graphics/renderer/render.zig",      "tests/events/test_basics.zig",
+            "tests/integration/engine_pipeline.zig", "shared",
+            "editor",                                "runtime",
+            "tools/zig",
         });
         format.setCwd(b.path("."));
         format.has_side_effects = true;
