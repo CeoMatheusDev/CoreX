@@ -63,17 +63,21 @@ CoreX/
 │   └── tests/                     # erros protegidos, ownership e fronteiras C++/Lua
 ├── examples/game/                 # [planejado] cena real e scripts C++/Lua executáveis
 ├── tools/
-│   ├── zig-requirements.txt        # [atual] Zig 0.17.0 e hashes das wheels
-│   ├── check_contract_fixtures.py  # [atual] igualdade dos exemplos + digest do manifesto
-│   ├── check_application_targets.py # [atual] rejeição explícita de alvos fora do produto
-│   ├── ci_capture.py              # [atual] tail limitado de falhas em annotations GitHub
-│   └── test_bootstrap.py           # [atual] contratos entre executáveis e probes adversariais
+│   └── python/                     # [atual] ferramentas auxiliares isoladas; fora do runtime
+│       ├── README.md               # política de isolamento e comandos
+│       ├── requirements-zig.txt    # Zig 0.17.0 fixado por versão e hashes
+│       ├── prepare_legacy_deps.py  # cache de pacotes Zig com hashes verificados
+│       ├── test_prepare_legacy_deps.py # testes offline do extrator TAR
+│       ├── check_contract_fixtures.py # igualdade dos exemplos + digest do manifesto
+│       ├── check_application_targets.py # rejeição explícita de alvos fora do produto
+│       ├── ci_capture.py           # tail limitado de falhas em annotations GitHub
+│       └── test_bootstrap.py       # contratos entre executáveis e probes adversariais
 ├── .github/workflows/
 │   └── shared-contracts.yml        # [atual] contratos e bootstraps; não gráficos
 └── docs/                          # ADRs, schemas, CLI, layout e evidências de progresso
 ```
 
-`zig-out/`, `.zig-cache/`, dependências baixadas e artefatos de teste não entram no Git. Cada pacote instala `bin/` e `share/corex/` em seu próprio prefixo. Os dois podem compartilhar um prefixo somente com manifesto/tabela idênticos.
+`tools/.venv/`, `__pycache__/`, `zig-out/`, `.zig-cache/`, dependências baixadas e artefatos de teste não entram no Git. Cada pacote instala `bin/` e `share/corex/` em seu próprio prefixo. Os dois podem compartilhar um prefixo somente com manifesto/tabela idênticos.
 
 ## Fatias implementadas
 
