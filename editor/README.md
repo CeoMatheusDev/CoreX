@@ -1,22 +1,25 @@
-> **Perfil de produto:** Windows/Linux, 3D e UI/Canvas, sem cena 2D. APIs previstas: Vulkan/OpenGL; D3D11/D3D12 somente Windows. Elegibilidade não comprova renderer implementado. ADR-003 detalha a política.
+> **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
 
-# CoreXEditor — bootstrap de validação
+# CoreXEditor
 
-Executável independente em Zig **0.17.0** + C23. **Ainda não é o Editor gráfico.** Nesta fatia não liga core, Zigway ou ZyntraUI; não introduz outra stack de janela/UI. Essas integrações continuam pendentes.
+CoreXEditor is a standalone Zig 0.17.0 + C23 project-validation bootstrap. **It is not yet a graphical Editor.** This executable does not link the legacy CoreX Engine, Zigway, or ZyntraUI; those integrations remain separate work.
 
-## Build
+## Build and test
+
+Run from this directory:
 
 ```sh
-cd editor
 zig build
 zig build test
 ```
 
-Os testes de abertura copiam `../exemploproject/Example.proj` em diretório temporário e compilam o Editor real. Para usar outra árvore de exemplos, passe `-Drepository-root=/caminho/para/CoreX` a `zig build test`. O teste não reutiliza resultado antigo quando o exemplo muda; `zig build check` apenas compila, inclusive em cross.
+The build imports `../shared`, compiles its C sources with `-std=c23`, and installs `zig-out/bin/CoreXEditor` (`.exe` on Windows). The install also contains a generated table and manifest under `zig-out/share/corex/`. Both the compiled product identity and manifest derive from the repository-root `VERSION`; keep the installed `share/corex/` tree alongside the executable.
 
-O build importa `../shared`, compila seus módulos C com `-std=c23` e instala `zig-out/bin/CoreXEditor` (Windows: `.exe`) com tabela/manifesto em `zig-out/share/corex/`. O manifesto e a identidade embutida no binário são gerados a partir de `VERSION`; manter essa árvore ao mover a instalação.
+Opening tests copy `../exemploproject/Example.proj` into a temporary directory and compile/use the real Editor. To select another example repository, pass `-Drepository-root=/absolute/path/to/CoreX` to `zig build test`. The tests rerun when the example changes. `zig build check` is compile-only, including for cross-targets.
 
-## Uso (na raiz do repositório)
+## Validate a project
+
+Run from the repository root:
 
 ```sh
 editor/zig-out/bin/CoreXEditor --version
@@ -24,19 +27,35 @@ editor/zig-out/bin/CoreXEditor --project docs/examples/EmptyGame.proj --headless
 editor/zig-out/bin/CoreXEditor exemploproject/Example.proj --headless --validate-only
 ```
 
-Validar também com um Runtime separado, previamente compilado:
+The `.proj` is read-only in this workflow. Output on stdout and stderr uses JSON Lines. The bootstrap validates the project and reports structured status; it does not open a UI, edit or save scenes, create backups, or perform atomic replacement. Requesting normal execution without `--validate-only` fails explicitly with exit code 4, including when `--headless` is supplied.
+
+## Optional Runtime handshake
+
+To compare the validated project with a separately built Runtime, provide a trusted executable:
 
 ```sh
-editor/zig-out/bin/CoreXEditor --project docs/examples/EmptyGame.proj --validate-only \
-  --check-runtime /caminho/absoluto/CoreX/runtime/zig-out/bin/CoreXRuntime
+editor/zig-out/bin/CoreXEditor \
+  --project docs/examples/EmptyGame.proj \
+  --validate-only \
+  --check-runtime /absolute/path/to/CoreX/runtime/zig-out/bin/CoreXRuntime
 ```
 
-Essa opção executa o binário indicado: use apenas executável confiável. Não é Play; o filho também usa `--headless --validate-only`. O Editor captura os dois pipes, valida o protocolo e exige fingerprint igual da configuração inteira. Deadline de 10 segundos, limites de captura e reap do filho imediato. Não supervisiona árvores de processos nem o fechamento abrupto do Editor.
+This launches the supplied child process; use only a trusted binary. The child is invoked with `--headless --validate-only`. The Editor captures both pipes, validates the protocol, and requires an identical fingerprint of the full configuration. The check has a 10-second deadline, bounded capture, and reaps the immediate child. It does not supervise a process tree or guarantee cleanup after abrupt Editor termination. This handshake is validation, not Play.
 
-Stdout/stderr contêm JSON lines. O `.proj` é somente lido nesta fase. Não há UI, viewport, inspetor, edição/salvamento de cena, backup/replace atômico ou snapshots ZyntraUI. Solicitar execução normal sem `--validate-only` falha explicitamente (exit 4), inclusive com `--headless`.
+CLI options, exit codes, and protocol limits are specified in [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Cross-process tests are run with `python tools/test_bootstrap.py` from the repository root after building both applications.
 
-Contrato completo, códigos de saída e limites: [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Testes entre executáveis: `python tools/test_bootstrap.py` a partir da raiz após compilar **ambos** os pacotes. O build legado da raiz é separado e ainda tem pendências de dependências.
+## Project-opening and resource work
 
-`src/workspace.zig` implementa o modelo sem alocação de domínio/ferramenta: transformações 3D ou layout de Canvas. Trocar domínio reinicia ferramenta; operação incompatível retorna erro sem mutação. Ainda não está ligado a painéis ZyntraUI nem altera cenas reais.
+The workspace model in `src/workspace.zig` supports domain/tool state without allocating scene data: switching between 3D transforms and Canvas layout resets the active tool, and an incompatible operation returns an error without mutating state. It is not connected to UI panels and does not edit real scenes.
 
-O Editor aceita o `.proj` como argumento posicional para futura associação com o SO e rejeita abertura sem projeto. A associação, a splash 800×600 e o Editor gráfico ainda não estão implementados; execução normal falha explicitamente. `src/project_preflight.zig` contém uma tarefa concorrente testada para ler e validar apenas o documento, ainda não ligada ao bootstrap ou à UI. `src/resource_discovery.zig` acrescenta descoberta real das quatro raízes obrigatórias, verificando existência, tipo e contenção após resolução de symlinks. Também indexa metadata ordenada e limitada dos arquivos regulares e subdiretórios em `assets.root` (sem ler ou carregar conteúdo, fora dos tickets de progresso), percorre a árvore com handles sem seguir symlinks, recusa links de arquivo/diretório e checa containment/tipo de arquivos-alvo já existentes; arquivos ausentes continuam tickets lógicos até haver loaders. `src/project_opening.zig` liga a descoberta concorrente ao coordenador por `Opening.startDiscovery()`/`pollDiscovery()`; o snapshot expõe o estágio de descoberta, e `Opening.assetInventory()`/`assetDirectoryInventory()` fornecem views somente leitura; `Opening.assetChildren()` itera filhos imediatos em ordem sem alocar; `Discovery.findAsset()`/`findAssetDirectory()` fazem lookup exato, e `Opening.verifyAssetSnapshot()`/`verifyAssetDirectorySnapshot()` verificam invalidação observável; isso não substitui validação segura do futuro loader. A descoberta não lê, decodifica nem executa conteúdo; `Opening.openAsset()` abre um asset indexado e `Opening.openResourceFile()` abre cena/script/biblioteca existente read-only por handles sem seguir symlinks, e `Opening.readAssetAlloc()`/`readResourceAlloc()` copiam bytes opacos sob limite explícito do chamador, sem interpretação do formato; `resource_discovery.AssetReadTask` executa a leitura em worker; `Opening.startAssetRead()`/`takeAssetRead()` integram um trabalho por vez, publicam estágio/erro coletado e o recolhem antes de liberar o inventário (uso direto exige Discovery e allocator thread-safe vivos). Os testes de conclusão dos tickets e de prontidão continuam sintéticos; não são evidência de loader de cena/assets, UI ou serviços reais. A integração de abertura continua fora do bootstrap e da UI. Detalhes e pendências em [ADR-004](../docs/ADR-004-project-opening-splash.md).
+`src/project_preflight.zig` contains a tested concurrent task for reading and validating the project document, but it is not connected to the bootstrap or UI. `src/resource_discovery.zig` discovers the four required roots, checks existence/type/containment after symlink resolution, and indexes bounded, sorted metadata for regular files and subdirectories under `assets.root`. Traversal uses directory handles without following symlinks; file and directory symlinks are rejected. Existing resource paths are checked for containment and type. Missing resources remain logical tickets until loaders exist.
+
+`src/project_opening.zig` coordinates discovery through `Opening.startDiscovery()` and `pollDiscovery()`. Its snapshot exposes discovery state; `assetInventory()` and `assetDirectoryInventory()` provide read-only views; `assetChildren()` iterates immediate children without allocation; and `Discovery.findAsset()` / `findAssetDirectory()` perform exact lookups. Snapshot-verification methods expose invalidation changes; they do not replace the future loader's security checks.
+
+Discovery does not read, decode, or execute resource contents. `Opening.openAsset()` opens an indexed asset, while `openResourceFile()` opens an existing scene/script/library read-only through handles that do not follow symlinks. `readAssetAlloc()` and `readResourceAlloc()` copy opaque bytes under a caller-supplied limit; they do not interpret the format. `resource_discovery.AssetReadTask` performs a worker read, and `startAssetRead()` / `takeAssetRead()` support one outstanding task at a time, publish status/error, and require collection before the inventory is released. Direct use requires a live, thread-safe `Discovery` and allocator.
+
+Ticket-completion and readiness tests remain synthetic. They are not evidence of a scene/asset loader, graphical UI, or real services. Project opening is still disconnected from the bootstrap and UI. See [ADR-004: project opening and splash](../docs/ADR-004-project-opening-splash.md) for decisions and remaining work.
+
+## Project association
+
+The Editor accepts a `.proj` path as a positional argument for future operating-system file association and refuses to start without a project. Passing a path does not register that association. The 800×600 splash screen, graphical Editor, and normal project-opening experience are not implemented.

@@ -1,74 +1,72 @@
-> **Escopo atual das aplicações:** Windows/Linux; Editor 3D + UI/Canvas, sem cena 2D. Vulkan/OpenGL previstos nos dois SOs, D3D11/D3D12 no Windows — ainda sem renderers GPU ligados. [ADR-003](docs/ADR-003-desktop-3d-canvas.md) · [Schema v2](docs/PROJECT_SCHEMA_V2.md).
+> **Product scope:** Windows and Linux; a 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. A platform being eligible does not mean its renderer is implemented. See [ADR-003](docs/ADR-003-desktop-3d-canvas.md).
 
 # CoreX Engine
 
-Game Engine profissional em Zig 0.17.0.
+CoreX is a Zig 0.17.0 game-engine project in active development. The repository currently contains independent Editor and Runtime validation bootstraps, shared project contracts, and a separate legacy engine demonstration.
 
-## Editor e Runtime — implementação em andamento
+## Current implementation status
 
-ADR e schemas aprovados. Contratos em [`shared/`](shared/README.md) e bootstraps independentes em [`editor/`](editor/README.md) e [`runtime/`](runtime/README.md): parser/serializer `.proj`, presets, DTO Zig↔C23, CLI, logs JSON lines e verificação entre processos. **Os executáveis ainda validam documentos; não há Editor gráfico ou execução de jogo.**
+- **Editor and Runtime:** parse and validate project documents, presets, distribution identity, and the C23 graphics-configuration DTO. They do not provide a graphical Editor or run a game.
+- **Shared contracts:** `.proj` schemas v1/v2/v3, preset validation, product identity, bootstrap protocol, and Zig↔C23 DTOs. See [`shared/README.md`](shared/README.md).
+- **Legacy executable:** an independent demonstration using a null renderer. It is not the Editor or Runtime and does not prove GPU support.
+- **Graphics:** there is no Vulkan Instance/Surface/Device/Swapchain or GPU presentation in the applications. The pinned Zigway window dependency does not currently expose the native-window contract required by CoreX Vulkan. See [ADR-004](docs/ADR-004-vulkan-surface-integration.md).
 
-- [CLI executável e limites](docs/APPLICATION_CLI.md)
-- [Estrutura-alvo](docs/APPLICATION_LAYOUT.md)
-- [Progresso e evidências atuais](docs/APPLICATION_PROGRESS.md)
-- [Migração para desenvolvimento sem Python](docs/PYTHON_REMOVAL.md)
-- [Contrato `.proj` v1](docs/PROJECT_SCHEMA_V1.md)
-- [Contrato `presets.zon` v1](docs/PRESETS_SCHEMA_V1.md)
-- [Política de versionamento de produto e releases](VERSIONING.md)
-- [CLI Zig de version/release](versioning/README.md)
-- [Changelog](CHANGELOG.md)
+## Requirements
 
-As seções abaixo descrevem o core legado, não evidência de recursos gráficos funcionais. A preparação atual das dependências contorna falhas de resolução de pacotes; consulte o relatório de progresso para resultados e limites.
+- Zig **0.17.0**; do not silently substitute another version.
+- A C compiler with C23 support for the shared and application builds.
+- Linux legacy window builds require X11 development libraries (for example, `libx11-dev` on Ubuntu). Headless tests do not open a display, but the legacy Zigway build still links X11.
+- Python is still required by some CI and cross-process integration tests; see the [migration plan](docs/PYTHON_REMOVAL.md).
 
-## Validação nativa com Zig
+## Build and validation
 
-Com Zig 0.17.0 já disponível e as dependências legadas preparadas, `zig build validate -j2 --summary all` reúne formatação, ferramentas, fixtures, política de alvos, headers e testes Shared/Editor/Runtime. A validação é nativa; `zig build check -Dtarget=x86_64-windows-gnu` continua compilando sem executar. A CI e alguns testes ainda exigem Python: veja o [inventário e plano de migração](docs/PYTHON_REMOVAL.md).
+After Zig is available and the pinned legacy packages have been prepared:
 
-## Core legado — build e testes de fumaça
+```sh
+zig build -j2 --summary all
+zig build test --summary all
+zig build test -Doptimize=ReleaseSafe --summary all
+zig build validate -j2 --summary all
+```
 
-O executável legado é uma demonstração independente, não o Editor/Runtime novo. Seu loader retorna uma configuração fixa, o backend gráfico é null e subsistemas como assets ainda contêm stubs; a saída do programa não comprova carregamento de projeto, GPU ou execução de jogo.
+To install the supported Zig wheel on Linux without Python and prepare the pinned packages:
 
-Para reproduzir no Linux com as ferramentas de sistema indicadas abaixo e desenvolvimento X11 instalado (por exemplo, `libx11-dev` no Ubuntu):
-
-```bash
-# A instalação do Zig não usa Python; escolha um diretório que ainda não exista.
+```sh
 mkdir -p .cache
 sh tools/install_zig.sh "$PWD/.cache/zig-0.17.0"
 ZIG_EXE="$PWD/.cache/zig-0.17.0/ziglang/zig"
-# Preparação e verificação das dependências sem Python.
 sh tools/prepare_legacy_deps.sh --zig "$ZIG_EXE"
-"$ZIG_EXE" build
-"$ZIG_EXE" build test --summary all
-"$ZIG_EXE" build test -Doptimize=ReleaseSafe --summary all
-./zig-out/bin/CoreXEngine
+"$ZIG_EXE" build validate -j2 --summary all
 ```
 
-O instalador requer `curl`, `unzip`, `sha256sum` e utilitários POSIX; o preparador em shell/Zig requer `curl` para download e utilitários POSIX. O preparador baixa os arquivos das versões fixadas, confere o SHA-256 dos arquivos e o hash de pacote Zig declarado no manifesto e inicializa o cache a partir dos diretórios extraídos. É uma solução alternativa para o cache de tarballs com pasta extra observado no Zig 0.17.0; não altera o manifesto ou os pacotes upstream. Para uso offline, forneça `--archive-dir` com `zigway.tar.gz` e `zyntra_ui.tar.gz` correspondentes às versões fixadas. A suíte legada cobre lifecycle, IDs, fila sequencial de jobs, Event Bus síncrono limitado e renderer null, além de regressões de FIFO, reentrada e falhas de alocação; não executa todos os arquivos históricos em `tests/`. A fila e o [Event Bus](docs/EVENT_BUS.md) não são paralelos nem thread-safe, e não estão integrados ao Runtime. As CIs do PR #8 e de seu merge em main passaram; alterações posteriores ainda exigem nova validação remota.
+For offline dependency preparation, provide verified archives with `--archive-dir`, containing `zigway.tar.gz` and `zyntra_ui.tar.gz`. The preparation script verifies both archive checksums and package hashes before initializing Zig's cache. See [tooling documentation](tools/zig/README.md) for details.
 
-## Integração de Melhorias Recentes
+`zig build check -Dtarget=x86_64-windows-gnu` is compile-only. It is not a native Windows runtime test. Do not report a cross-build as validation of native windowing, Vulkan, or GPU presentation.
 
-### Zigway (v0.1.0-alpha.4) — Plataforma / Janela / Input
-- `src/platform/zigway.zig` — interface nativa
-- `src/window/zigway.zig` — generational handles, event loop (`waitEvents`), clipboard, pointer capture, multi-window, Wayland/X11/Win32/Null
-- Dependência no `build.zig.zon`: `.zigway = .{ .url = "...v0.1.0-alpha.4.tar.gz", .hash = "zigway-..." }`
+## Applications
 
-### ZyntraUI (v1.44.1) — UI Toolkit / Debug / Overlay
-- `src/ui/zyntra.zig` — interface renderer-agnostic
-- Recursos incorporados: 35 widgets, flex layout, dirty-rect partial repaint, glyph atlas, IME, accessibility tree, window registry + compositor, viewport3D
-- Dependência no `build.zig.zon`: `.zyntra_ui = .{ .url = "...v1.44.1.tar.gz", .hash = "zyntra_ui-..." }`
+| Component | Status and documentation |
+| --- | --- |
+| Editor | Project-validation bootstrap; no graphical UI or scene editing. [Build and usage](editor/README.md) |
+| Runtime | Project-validation bootstrap; no game loop or gameplay execution. [Build and usage](runtime/README.md) |
+| Shared | Schemas, presets, product identity, protocol, and C23 DTO. [Contracts and API](shared/README.md) |
+| Versioning CLI | Validates and updates the root `VERSION`; does not create Git or GitHub releases. [Usage](versioning/README.md) |
+| Zig tools | Fixture, target-policy, dependency-preparation, and CI-capture tooling. [Usage](tools/zig/README.md) |
 
-## Próximas Fases
+## Pinned legacy integrations
 
-- Fase 2: Window, Input, Platform (Linux/Windows).
-- Fase 3: Graphics Abstraction + Vulkan Backend.
-- Fase 4: Render Graph, PBR, Shadows, Profiles Low/Medium/High.
-- Fase 5: ECS + Scene System.
-- Fase 6: Physics Engine próprio.
-- Fase 7: Lua Scripting.
-- Fase 8: Asset Manager + Async Loading.
-- Fase 9: Áudio + Animação.
-- Fase 10: Otimização + Profiling.
+The legacy build pins **Zigway v0.1.0-alpha.4** for window/input and **ZyntraUI v1.44.1** for UI-related experiments. CoreX's thin Zigway adapters have headless tests for explicit backend configuration, logical window lifecycle, event delivery, and input-state forwarding. These tests use Zigway's null backend; they do not exercise a native window or validate Vulkan.
 
-## Projeto de exemplo e abertura do Editor
+Editor and Runtime are separate executables and do not currently share this legacy Engine or its window/UI integration. The dependency pins are not updated to an open, unvalidated Zigway branch.
 
-[exemploproject/](exemploproject/README.md) contém um `.proj` schema v2 para validar a entrada do Editor. O Editor aceita o caminho posicional e recusa iniciar sem projeto. A splash 800×600, a associação do arquivo, o carregamento de recursos e o Editor gráfico ainda não estão prontos; consulte o [ADR-004](docs/ADR-004-project-opening-splash.md).
+## Project contracts and design records
+
+- [Application CLI and protocol](docs/APPLICATION_CLI.md)
+- [Application layout](docs/APPLICATION_LAYOUT.md)
+- [Application progress and evidence](docs/APPLICATION_PROGRESS.md)
+- [Project schema v1](docs/PROJECT_SCHEMA_V1.md) · [v2](docs/PROJECT_SCHEMA_V2.md) · [v3](docs/PROJECT_SCHEMA_V3.md)
+- [Preset schema](docs/PRESETS_SCHEMA_V1.md)
+- [Versioning policy](VERSIONING.md) · [Changelog](CHANGELOG.md)
+- [Example project](exemploproject/README.md)
+
+The example document can be validated by the Editor, but its referenced scene and assets are not loaded. Project validation is not evidence of a working game, graphical Editor, or GPU renderer.

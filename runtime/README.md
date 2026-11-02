@@ -1,52 +1,57 @@
-> **Perfil de produto:** Windows/Linux, 3D e UI/Canvas, sem cena 2D. APIs previstas: Vulkan/OpenGL; D3D11/D3D12 somente Windows. Elegibilidade não comprova renderer implementado. ADR-003 detalha a política.
+> **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
 
-# CoreXRuntime — bootstrap de validação
+# CoreXRuntime
 
-Executável independente em Zig **0.17.0** + C23. **Ainda não executa jogos.** Não liga o core nem cria janela/device; Zigway continua sendo a stack obrigatória quando a integração gráfica for implementada.
+CoreXRuntime is a standalone Zig 0.17.0 + C23 project-validation bootstrap. **It does not execute games.** It does not link the legacy Engine, create a window or graphics device, or start a gameplay loop. Zigway remains the intended windowing dependency for future graphical integration.
 
 ## Build
 
+Run from this directory:
+
 ```sh
-cd runtime
 zig build
 zig build test
 ```
 
-Importa `../shared`, compila C com `-std=c23` e instala `zig-out/bin/CoreXRuntime` (Windows: `.exe`) com `zig-out/share/corex/{distribution.json,presets.zon}`. O manifesto e a identidade embutida são gerados a partir de `../VERSION`. Instalação incompleta/corrompida é erro, sem fallback em CWD/projeto.
+The build imports `../shared`, compiles C sources with `-std=c23`, and installs `zig-out/bin/CoreXRuntime` (`.exe` on Windows) together with `zig-out/share/corex/{distribution.json,presets.zon}`. The manifest and embedded product identity are generated from the repository-root `VERSION`. Missing or corrupt install data is an error; the Runtime does not fall back to the working directory or project directory.
 
-## Uso (na raiz do repositório)
+## Validate a project
+
+Run from the repository root:
 
 ```sh
 runtime/zig-out/bin/CoreXRuntime --version
 runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --validate-only
 ```
 
-Esse comando lê o schema compartilhado, confere a identidade da distribuição, resolve o preset/overrides, valida o DTO C23 e emite logs JSON lines com os parâmetros concretos. Emite `runtime.validation_complete`, **nunca `runtime.ready`**. O modo não carrega cena/assets/scripts, negocia ABI do core, consulta GPU ou simula ticks. O sucesso vale apenas para documento/presets.
+Validation reads the shared project schema, checks distribution identity, resolves presets and overrides, validates the C23 DTO, and writes JSON Lines logs with concrete configuration values. It emits `runtime.validation_complete`, **never `runtime.ready`**. It does not load scenes, assets, or scripts, negotiate the Core ABI, query a GPU, or simulate ticks. Success applies only to the document and presets.
 
-Sem `--validate-only`, inclusive com `--headless`, retorna erro de core indisponível (exit 4). Isso evita que uma simulação vazia seja apresentada como Player funcional. C++/Lua, loop fixed timestep, job system, hot reload e UI de jogo continuam pendentes; nenhuma UI de Editor é incorporada.
+Without `--validate-only`, including with `--headless`, execution fails explicitly with a core-unavailable error (exit code 4). This prevents an empty simulation from being presented as a functioning Player. C++/Lua integration, a fixed-timestep gameplay loop, jobs, hot reload, and game UI remain pending; Editor UI is not embedded in the Runtime.
 
-O Runtime nunca grava `.proj`. Códigos de saída, opções e protocolo: [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Testes reais Editor→Runtime: `python tools/test_bootstrap.py` na raiz após compilar ambos. Testes nativos Windows ainda não estão disponíveis; cross-compilação não substitui execução nativa.
+The Runtime never writes `.proj` files. CLI options, exit codes, and protocol are documented in [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Native Editor→Runtime process tests run with `python tools/test_bootstrap.py` from the repository root after building both applications. Native Windows execution is not currently available; a cross-build is not a substitute.
 
-## Modelo de contabilidade de tempo (ainda não integrado)
+## Time scheduler (not integrated into gameplay)
 
-`src/timing.zig` oferece um acumulador inteiro, sem alocação ou relógio próprio. Usa a frequência explícita de 1–1000 Hz do schema e contabiliza `elapsed_ns * Hz` em unidades de fase; 1 bilhão de unidades corresponde a um tick. Isso preserva a razão `1 / Hz`, inclusive em frequências que não dividem um segundo inteiro em nanossegundos. O projeto ainda não passa a configuração a esse modelo em execução.
+`src/timing.zig` provides an integer accumulator with no internal allocation or clock. It uses the explicit 1–1000 Hz frequency from the schema and stores phase as `elapsed_ns * Hz`; one billion units correspond to one tick. This preserves the `1 / Hz` rate even when the frequency does not divide one second evenly in nanoseconds. The project configuration is not yet connected to this model in a running Runtime.
 
-- `addElapsed` recebe um delta monotônico não negativo calculado pelo futuro loop. Overflows são erros sem alterar o estado.
-- `pending(budget)` informa quantos ticks inteiros estão disponíveis, até o limite da iteração. É uma consulta, não uma reserva: o chamador deve aplicar o budget uma vez por iteração.
-- `nextTick` informa o índice (base zero) do próximo tick ou `null` quando não há tick devido. Retorna erro se o contador estiver esgotado, antes de qualquer trabalho. Quem usa `commitTick` manualmente deve verificar `nextTick` antes de executar o tick e confirmar **somente depois** de concluí-lo com sucesso.
-- `runDue` oferece uma alternativa que recebe um callback explícito, verifica o contador antes de cada chamada e confirma apenas as chamadas bem-sucedidas, até o budget. Se uma chamada falhar, os ticks anteriores continuam confirmados e o tick falho permanece pendente. Mutação do agendador e execução recursiva pelos métodos são recusadas durante o callback. O callback não deve alterar diretamente os campos do agendador nem acessá-lo concorrentemente. Não há rollback de efeitos do callback: o chamador deve garantir transação ou interromper a sessão após falha, em vez de repetir cegamente.
-- `interpolationAlpha` retorna `null` enquanto há ticks atrasados; quando não há, retorna a fração entre 0 (inclusive) e 1 (exclusive). Nenhum estado anterior/atual é mantido aqui.
+- `addElapsed` accepts a non-negative monotonic delta computed by a future loop. Overflow returns an error without changing state.
+- `pending(budget)` reports whole ticks currently due, capped by the iteration budget. It is a query, not a reservation; apply the budget once per iteration.
+- `nextTick` returns the zero-based next tick index or `null` when no tick is due. It reports counter exhaustion before work. Code using `commitTick` manually must check `nextTick` before running a tick and commit only after successful completion.
+- `runDue` is an alternative that accepts an explicit callback, checks exhaustion before each call, and commits only successful calls up to the budget. If a callback fails, earlier ticks stay committed and the failed tick remains due. Recursive mutation/execution through scheduler methods is rejected during the callback. The callback must not mutate scheduler fields directly or access it concurrently. Callback side effects are not rolled back; after partial failure, the caller must provide transactionality or stop the session rather than blindly retry.
+- `interpolationAlpha` returns `null` while ticks remain due; otherwise it returns the fraction in `[0, 1)`. This type does not store previous/current simulation state.
 
-Sem descarte automático de backlog. Pausa/retomada, relógio e tratamento de deltas, política de recuperação de falhas, medição/log de atraso, input ordenado por tick, jobs, replay e integração ao core ainda precisam ser definidos e testados no Runtime real. Esses testes aritméticos não demonstram determinismo de gameplay nem autorizam emitir `runtime.ready`.
+There is no automatic backlog discard. Pause/resume, clock and delta handling, recovery policy, delay telemetry, input ordering by tick, jobs, replay, and integration into a real game loop remain undefined or unimplemented. These arithmetic tests do not prove deterministic gameplay or permit `runtime.ready`.
 
-## Buffer isolado de input por tick
+## Tick-scoped input buffer (not a Zigway adapter or replay format)
 
-`src/tick_input.zig` contém `Buffer(T)`, infraestrutura genérica para o futuro loop; **não** é adaptador Zigway nem formato persistente de replay. Usa armazenamento exclusivo fornecido pelo chamador, sem alocação própria. Valores são copiados superficialmente: o chamador é responsável pela validade de quaisquer referências em `T`; ponteiros/handles não constituem registro determinístico persistente.
+`src/tick_input.zig` provides generic infrastructure for a future loop. It uses storage exclusively supplied by the caller and performs no internal allocation. Values are shallow-copied; the caller owns the lifetime of references inside `T`, and pointers/handles are not a persistent deterministic record.
 
-`enqueue` e `enqueueBatch` aceitam entradas em ordem não decrescente de tick, preservando a ordem original dentro de cada tick. O lote é integralmente validado antes de copiar: capacidade insuficiente, tick passado, fora de ordem ou sem possibilidade de confirmação causa erro **sem inserção parcial**. A entrada do lote não pode compartilhar o armazenamento do buffer; a capacidade é verificada antes dos valores. Tick `maxInt(u64)` é recusado, pois o contador não pode avançar após ele.
+`enqueue` and `enqueueBatch` accept nondecreasing tick indices and preserve input order within each tick. A batch is validated before copying: insufficient capacity, a past/out-of-order tick, or a tick that cannot be committed fails without partial insertion. Batch input must not alias the buffer's storage. Tick `maxInt(u64)` is rejected because the counter cannot advance beyond it.
 
-`beginTick` só abre o próximo tick, inclusive vazio, e verifica overflow antes do trabalho. A fatia emprestada é válida até `commitTick` ou `abortTick`; não altere o armazenamento diretamente. `commitTick` remove o lote e avança; `abortTick` o mantém. O buffer não é thread-safe. Sua compactação custa O(backlog); o chamador define capacidade e tratamento de backpressure.
+`beginTick` opens only the next tick, including an empty tick, and detects overflow before work. The borrowed slice remains valid until `commitTick` or `abortTick`; callers must not mutate storage directly. `commitTick` removes the batch and advances, while `abortTick` retains it. The buffer is not thread-safe. Compaction costs O(backlog); the caller chooses capacity and backpressure behavior.
 
-Um teste combina o buffer com `Scheduler.runDue` e falha simulada antes de efeitos externos. Na integração futura, a confirmação do buffer deve ser a **última operação infalível do callback**: falhas posteriores poderiam avançá-lo sem confirmar o scheduler. Abort não reverte efeitos de gameplay; retry só é seguro com transação ou ausência de efeitos parciais. Atribuição de eventos Zigway a ticks, serialização, replay, relógio e gameplay continuam pendentes.
+A test combines the buffer with `Scheduler.runDue` and simulates failure before external effects. In a future integration, input-buffer commit must be the **last infallible operation in the callback**: a later failure could advance the buffer without committing the scheduler. Abort does not reverse gameplay side effects; retry is safe only with a transaction or no partial effects. Mapping Zigway events to ticks, serialization, replay, clock policy, and gameplay integration remain pending.
 
-**Bloqueio observado no Zigway v0.1.0-alpha.4 fixado:** no backend null com capacidade 1, `key_down` seguido de `key_up` substitui o primeiro evento, mas `droppedEvents()` permanece zero. Esse contador não detecta todas as perdas; não se deve usá-lo para garantir captura sem perdas. O teste reproduzível está em `src/zigway_input_tests.zig` no build legado. Não testa janela nativa nem corrige o Zigway upstream.
+## Known Zigway event-overflow limitation
+
+The pinned Zigway `v0.1.0-alpha.4` null backend has a reproducible case where, with queue capacity 1, `key_down` followed by `key_up` evicts the first event while `droppedEvents()` remains zero. Therefore the counter does not detect every loss and cannot guarantee lossless input capture. The regression observation is in `src/zigway_input_tests.zig`; it does not test native windowing or fix Zigway upstream.

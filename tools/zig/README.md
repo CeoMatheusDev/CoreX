@@ -1,8 +1,10 @@
-# Ferramentas Zig
+# Zig tooling
 
-## Versionamento de produto e release check
+This package builds the repository's native validation and release tools with Zig 0.17.0. Its checks validate contracts and policy; they do not establish GPU or native-window support.
 
-`zig build` instala `corex-version` junto às outras ferramentas nativas. Na raiz do repositório:
+## Product version and release checks
+
+Build from the repository root:
 
 ```sh
 (cd tools/zig && zig build)
@@ -12,65 +14,78 @@ tools/zig/zig-out/bin/corex-version bump beta --dry-run
 tools/zig/zig-out/bin/corex-version release check
 ```
 
-O bump real altera somente `VERSION`; o release check verifica a identidade compilada, o manifesto gerado e a tabela de presets. Nenhum comando cria tag, commit ou release. Política completa: [`VERSIONING.md`](../../VERSIONING.md).
+A real version bump changes only `VERSION`. The release check validates the compiled product identity, generated manifest, and preset table. No command creates a tag, commit, or release. See [`../../VERSIONING.md`](../../VERSIONING.md) and [`../../versioning/README.md`](../../versioning/README.md).
 
-## Validação nativa do tooling
+## Native tooling validation
 
-Com Zig 0.17.0 disponível, em `tools/zig` execute `zig build validate -j2 --summary all`. O passo roda os testes do tooling e valida fixtures e as seis recusas de alvos com executáveis nativos; não exige a preparação dos pacotes legados. `validate-fixtures` e `validate-targets` podem ser executados individualmente. Os passos de validação rejeitam `-Dtarget` e `-Dcpu` customizados; `zig build check -Dtarget=x86_64-windows-gnu` permanece compilação cruzada sem execução.
+With Zig 0.17.0, run from `tools/zig`:
 
-Os validadores de fixtures e alvos executam a cada chamada, sem reaproveitar sucesso anterior. Para testar uma cópia das fixtures, use `zig build validate-fixtures -Drepository-root=/caminho/para/CoreX` ou `zig build test-fixture-cli -Drepository-root=/caminho/para/CoreX`; a opção relativa é interpretada a partir de `tools/zig`. `sh tools/test_zig_validate.sh /caminho/absoluto/para/zig`, a partir da raiz, exercita validade, corrupção/restauração e rejeição de target cross tanto para a verificação quanto para os testes black-box.
+```sh
+zig build validate -j2 --summary all
+```
 
-## Preparação das dependências legadas
+This executes tooling tests, fixture validation, and all six out-of-product target rejections using native executables. `validate-fixtures` and `validate-targets` can also be run individually. Validation steps reject custom `-Dtarget` and `-Dcpu`; `zig build check -Dtarget=x86_64-windows-gnu` remains compile-only and never runs a cross-compiled binary.
 
-`corex-extract-legacy` aceita somente as releases Zigway e ZyntraUI cujos SHA-256 estão fixados no código; verifica os bytes antes de descompactar. Confira limites, regras de extração e dependências em `docs/PYTHON_REMOVAL.md`. Não é um extrator genérico nem protege contra modificação concorrente por quem controla o diretório pai. O passo `zig build install-extractor` instala apenas essa ferramenta; `tools/prepare_legacy_deps.sh` a compila via Zig Build, baixa ou usa arquivos offline e confirma os hashes de pacote com `zig fetch`. A referência Python permanece na CI durante a transição.
+Fixture and target validators run on each invocation; they do not reuse a previous success. For a different checkout, use `zig build validate-fixtures -Drepository-root=/absolute/path/to/CoreX` or `zig build test-fixture-cli -Drepository-root=/absolute/path/to/CoreX`. Relative paths are resolved from `tools/zig`. From the repository root, `sh tools/test_zig_validate.sh /absolute/path/to/zig` exercises valid, corrupted, restored, and cross-target-rejection cases for validation and black-box tests.
 
-## Verificação das fixtures (migração em andamento)
+## Preparing pinned legacy packages
 
-Na raiz do repositório, com **Zig 0.17.0** já instalado:
+`corex-extract-legacy` accepts only the Zigway and ZyntraUI releases whose SHA-256 values are compiled into the tool. It checks archive bytes before safe extraction; it is not a general-purpose extractor and does not protect against concurrent modification by a process controlling the parent directory.
+
+Build and install only the extractor with:
+
+```sh
+cd tools/zig
+zig build install-extractor
+```
+
+`tools/prepare_legacy_deps.sh` builds that tool through Zig Build, downloads the pinned archives or reads them from an offline archive directory, extracts them, and checks package hashes with `zig fetch`. The Python implementation remains a CI reference during migration. Dependency preparation details and limits are in [`../../docs/PYTHON_REMOVAL.md`](../../docs/PYTHON_REMOVAL.md).
+
+## Project-contract fixture checker
+
+With Zig 0.17.0 installed, run from the repository root:
 
 ```sh
 zig run tools/zig/check_contract_fixtures.zig
 zig test tools/zig/check_contract_fixtures.zig
 zig test tools/zig/check_contract_fixtures.zig -O ReleaseSafe
 
-# Compilar as ferramentas e testar a CLI com casos isolados:
 (cd tools/zig && zig build)
 python tools/test_fixture_checkers.py tools/zig/zig-out/bin/corex-check-fixtures
 ```
 
-Para executar a ferramenta a partir de outro diretório, use `corex-check-fixtures --root /caminho/para/CoreX` com o executável compilado. `--help` mostra a sintaxe. Por padrão, a raiz é o diretório de trabalho atual; os arquivos são lidos em tempo de execução, não embutidos no binário. Cada arquivo tem limite de 4 MiB, e faltas ou violações retornam código não zero.
+To select another checkout, run the compiled `corex-check-fixtures --root /absolute/path/to/CoreX`; `--help` shows syntax. By default, the tool uses the current working directory and reads files at runtime rather than embedding them. Each file is limited to 4 MiB; missing files or violations return a nonzero code.
 
-A ferramenta compara exemplos documentados com fixtures empacotadas, confere versões `.proj` v1/v2/v3, ordem dos backends v2/v3, o enum obrigatório `renderer.profile` no schema v3 e SHA-256 dos presets contra o manifesto. Ela não importa os parsers do aplicativo. Essa é uma verificação de **consistência**, não de assinatura, segurança da distribuição, validação completa dos JSON Schemas ou funcionamento GPU. Além das verificações do script Python, rejeita JSON com chaves duplicadas e exige os números de schema esperados.
+The checker compares documented examples with packaged fixtures, validates `.proj` versions v1/v2/v3, backend ordering in v2/v3, the required `renderer.profile` enum in v3, and the preset SHA-256 against the manifest. It does not import application parsers. It checks consistency, not signatures, distribution security, complete JSON Schema compliance, or GPU operation. It rejects duplicate JSON keys and enforces expected schema numbers.
 
-**Migração gradual:** o workflow usa a ferramenta Zig para verificar as fixtures reais; o verificador Python permanece como referência no teste diferencial de CLI em diretórios temporários. Não presumir paridade total a partir dos casos cobertos. A instalação Linux do compilador já pode usar shell sem Python; outras ferramentas e testes da CI ainda usam Python. Um compilador Zig já disponível permite executar esta ferramenta sem Python; isso não elimina as demais dependências do pipeline.
+The workflow uses the Zig tool against real fixtures. Python remains the differential reference for isolated CLI cases; coverage does not prove complete parity. Some pipeline tools and CI tests still require Python even when Zig is installed.
 
-A suíte black-box Zig (`zig build test-fixture-cli` em `tools/zig`) compila e executa a CLI real em diretórios isolados contendo cópias das nove fixtures, schemas e manifesto do checkout. Os 11 testes agrupam os casos de arquivos faltantes, pares divergentes, JSON inválido, versões, backends, hash, formato, chaves duplicadas/escapadas, argumentos, privacidade dos diagnósticos e limite de 4 MiB. Usam supervisor com prazo de 20 segundos e captura limitada de stdout/stderr. As cópias temporárias são removidas; os dados reais não são alterados. Os testes também rodam em `zig build test` e `zig build validate`, nos modos escolhidos; o passo dedicado recusa cross-targets. Testes copiam arquivos em tempo de execução e não reutilizam sucesso anterior em cache. Essa cobertura não executa a referência Python nem substitui a comparação diferencial enquanto ela for necessária.
+`zig build test-fixture-cli` compiles and executes the real CLI against isolated copies of the nine fixtures, schemas, and manifest. Its 11 black-box tests cover missing files, mismatched pairs, invalid JSON, versions, backends, hashes, format, duplicate/escaped keys, arguments, diagnostic privacy, and the 4 MiB limit. A supervisor enforces a 20-second timeout and bounded stdout/stderr capture. Temporary copies are removed and checkout data is not modified. These tests are also part of `zig build test` and `zig build validate`; each invocation reruns them. The dedicated step rejects cross-targets. The tests do not invoke the Python reference, so differential parity remains a separate check.
 
-Os testes diferenciais cobrem arquivos ausentes/corrompidos, divergências, versões, backends, hash, interface da CLI e o limite de tamanho. Registram diferenças esperadas: Zig rejeita duplicatas JSON, versões não inteiras ou diferentes de 1/2 e arquivos acima de 4 MiB, enquanto o Python pode aceitá-los. Esses testes não demonstram equivalência para todas as entradas. Nas falhas, a CLI Zig identifica a etapa e os arquivos envolvidos, sem imprimir o conteúdo dos dados de entrada.
+Differential tests cover missing/corrupt files, mismatches, versions, backends, hashes, CLI behavior, and size limits. Known differences are intentional and documented: Zig rejects duplicate keys, non-integer or unsupported versions, and files above 4 MiB that Python may accept. On errors the Zig CLI reports the failing stage/files without printing input contents.
 
-O PR #4 foi fechado sem merge; sua reorganização não está na base atual. Uma futura remoção do verificador Python deve ocorrer após revisão da paridade e da cobertura, não implicitamente.
+The former PR #4 was closed without merge; its reorganization is not part of this branch. Do not remove the Python reference until parity and coverage have been reviewed.
 
-## Verificação de alvos das aplicações (migração em andamento)
+## Application target-policy checker
 
-Com o executável **Zig 0.17.0** em caminho absoluto:
+Run from `tools/zig` with an absolute Zig path:
 
 ```sh
-cd tools/zig
 zig build test --summary all
 zig build --summary all
-./zig-out/bin/corex-check-targets --root ../.. --zig /caminho/absoluto/para/zig
+./zig-out/bin/corex-check-targets --root ../.. --zig /absolute/path/to/zig
 ```
 
-No Windows os executáveis instalados usam sufixo `.exe`. A ferramenta verifica a versão exata do compilador e roda os `build check` reais de Editor e Runtime para os três alvos fora do produto. Exige que cada processo termine normalmente com código não zero **e** a mensagem específica de política no stderr; erro de compilação genérico ou saída zero não são considerados sucesso. Não executa nenhum binário cross-compilado.
+On Windows, installed tools use `.exe`. The checker verifies the exact compiler version and runs the real Editor and Runtime `build check` commands for each of the three unsupported targets. For each target it requires both a normal nonzero exit and the expected policy message on stderr. A generic compile error, zero exit, or a message printed only to stdout is not accepted. It never executes a cross-compiled product.
 
-Os testes automatizados incluem processos sintéticos no Linux: versão incorreta, argumentos/cwd, seis chamadas esperadas, saída zero com diagnóstico, diagnóstico errado e mensagem apenas em stdout. A execução com o compilador real continua separada.
+Automated Linux tests use synthetic processes to cover a wrong Zig version, arguments/CWD, all six expected calls, zero exit with a diagnostic, incorrect diagnostics, and a message printed only to stdout. Testing with a real cross-target compiler is a separate operation.
 
-Ela reutiliza o supervisor de subprocessos de `shared/`, sem shell para os comandos de produto: caminho explícito, captura simultânea limitada a 256 KiB por pipe e prazo de 120 segundos por build (10 segundos para consultar a versão); a limpeza após timeout depende do SO. O supervisor termina e recolhe o **filho imediato**, não garante encerramento de descendentes e não é sandbox; use somente compiladores confiáveis. Os testes Linux do supervisor usam `/bin/sh` para simular falhas e encerramento, não para invocar o Zig no produto.
+The checker uses the shared subprocess supervisor without a shell for product commands: explicit executable path, bounded simultaneous capture of up to 256 KiB per pipe, and 120 seconds per target build (10 seconds for the version query). Cleanup after timeout depends on the OS. It terminates and reaps the immediate child, but does not guarantee descendant termination and is not a sandbox. Use only trusted compiler binaries. Linux supervisor tests use `/bin/sh` to simulate failures; the product checker does not invoke Zig through a shell.
 
-A verificação de alvos na CI usa apenas esta ferramenta Zig; o script Python correspondente foi removido após o teste em paralelo e a adição de regressões automatizadas. Python permanece necessário para outras ferramentas e testes na CI atual. O build dessas ferramentas usa o pacote `shared` e suas fontes C23; não foi introduzida uma nova dependência de janela/GPU ou uma distribuição alternativa de Zig. Windows foi apenas cross-compilado, sem execução nativa desta ferramenta.
+Target validation in CI now uses this Zig tool; the corresponding Python checker was removed after parallel comparison and regression coverage. Other CI tools and tests still require Python. Windows was cross-compiled only; this tool has not been run natively on Windows.
 
-## Capturador de CI (Linux)
+## Linux CI output capture
 
-`corex-ci-capture` é uma implementação Linux usada pelo workflow de contratos nesta alteração para substituir gradualmente o capturador Python. O workflow alterado ainda precisa de validação remota. Consulte `tools/CI_CAPTURE.md` para contrato, testes e limitações. Windows ainda não está implementado para este capturador; cross-compilar o stub não é suporte nativo.
+`corex-ci-capture` is the Linux implementation used by the contracts workflow as a gradual replacement for the Python capture tool. The changed workflow still requires remote validation. See [`../CI_CAPTURE.md`](../CI_CAPTURE.md) for the protocol, tests, and limitations.
 
-`zig build test-capture-cli` compila o capturador e executa onze testes black-box nativos Linux, sem Python; também fazem parte de `zig build test` e `zig build validate` e são executados novamente em cada invocação. O passo dedicado rejeita cross-targets e hosts não Linux; `check` apenas compila os testes em cross. Usam `/bin/sh`, `/bin/sleep` e `/proc` Linux para os probes e verificação de cleanup. A suíte cobre somente parte dos casos da referência Python, que continua obrigatória na CI durante a transição.
+Windows is not implemented for this capture tool; a cross-compiled stub is not native support. `zig build test-capture-cli` runs 11 native Linux black-box tests without Python and is also part of `zig build test` and `zig build validate`. The dedicated step rejects cross-targets and non-Linux hosts; `check` only compiles for cross-targets. Tests use `/bin/sh`, `/bin/sleep`, and Linux `/proc` for probes and cleanup checks. They cover only part of the Python reference cases, so Python remains required in CI during the transition.

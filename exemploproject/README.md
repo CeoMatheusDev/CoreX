@@ -1,10 +1,21 @@
-# Projeto de exemplo
+# Example project
 
-`Example.proj` é um documento CoreX schema v2 para testar a abertura e validação do projeto. As pastas `scenes`, `assets` e `scripts` são pontos de partida; seus arquivos README não são assets de jogo.
+`Example.proj` is a CoreX schema v2 project document for exercising project discovery and validation. The `scenes/`, `assets/`, and `scripts/` directories are organizational starting points; their README files are documentation, not loadable game content.
+
+## Validate the project
+
+From the repository root, after building the Editor with Zig 0.17.0:
 
 ```sh
-# Na raiz do repositório, após compilar editor/ com Zig 0.17.0:
 editor/zig-out/bin/CoreXEditor exemploproject/Example.proj --headless --validate-only
 ```
 
-Esta validação cobre o documento e a distribuição/presets, **não** carrega arquivos da cena, assets ou scripts. `scenes/Main.scene` é o caminho de inicialização reservado pelo documento, mas o formato de cena e seu loader ainda não foram implementados; o arquivo não é fornecido como cena funcional. O Editor gráfico e a splash ainda não estão disponíveis, portanto abertura normal retorna erro de core indisponível. A associação do `.proj` com o sistema operacional ainda precisa ser instalada/implementada; chamar com o caminho posicional por si só não registra essa associação.
+This checks the project document, distribution identity, and presets. It does **not** load scene, asset, or script content.
+
+## Current limitations
+
+- The project names `scenes/Main.scene` as its startup path, but no scene format, scene file, or scene loader is implemented.
+- The graphical Editor, splash screen, and normal project-opening flow are not available; normal execution reports that the core is unavailable.
+- Passing a `.proj` path does not register a file association with the operating system.
+
+See the Editor opening design and remaining work in [`../docs/ADR-004-project-opening-splash.md`](../docs/ADR-004-project-opening-splash.md).
