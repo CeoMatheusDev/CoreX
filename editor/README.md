@@ -31,6 +31,6 @@ Essa opção executa o binário indicado: use apenas executável confiável. Nã
 
 Stdout/stderr contêm JSON lines. O `.proj` é somente lido nesta fase. Não há UI, viewport, inspetor, edição/salvamento de cena, backup/replace atômico ou snapshots ZyntraUI. Solicitar execução normal sem `--validate-only` falha explicitamente (exit 4), inclusive com `--headless`.
 
-Contrato completo, códigos de saída e limites: [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Testes entre executáveis: `python tools/test_bootstrap.py` a partir da raiz após compilar **ambos** os pacotes. O build legado da raiz é separado e ainda tem pendências de dependências.
+Contrato completo, códigos de saída e limites: [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Testes entre executáveis: `tools/.venv/bin/python tools/python/test_bootstrap.py` a partir da raiz após compilar **ambos** os pacotes. O build legado da raiz é separado e ainda tem pendências de dependências.
 
 `src/workspace.zig` implementa o modelo sem alocação de domínio/ferramenta: transformações 3D ou layout de Canvas. Trocar domínio reinicia ferramenta; operação incompatível retorna erro sem mutação. Ainda não está ligado a painéis ZyntraUI nem altera cenas reais.
