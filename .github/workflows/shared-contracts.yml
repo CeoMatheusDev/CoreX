@@ -31,8 +31,18 @@ jobs:
         run: python -c "import subprocess; v = subprocess.check_output(['python', '-m', 'ziglang', 'version'], text=True).strip(); assert v == '0.17.0', v"
       - name: Check approved fixtures
         run: python tools/check_contract_fixtures.py
+      - name: Test Zig tooling (Debug and ReleaseSafe)
+        working-directory: tools/zig
+        run: |
+          python -m ziglang build test --summary all
+          python -m ziglang build test -Doptimize=ReleaseSafe --summary all
+      - name: Check approved fixtures independently in Zig (shadow)
+        run: python -m ziglang run tools/zig/check_contract_fixtures.zig
+      - name: Cross-compile Zig tools and tests for Windows (no execution)
+        working-directory: tools/zig
+        run: python -m ziglang build check -Dtarget=x86_64-windows-gnu -j2 --summary all
       - name: Check formatting
-        run: python -m ziglang fmt --check shared editor runtime
+        run: python -m ziglang fmt --check shared editor runtime tools/zig
       - name: Test Zig and C23 contracts (Debug)
         working-directory: shared
         run: python ../tools/ci_capture.py python -m ziglang build test --summary all
@@ -51,6 +61,13 @@ jobs:
           cd ../runtime && python ../tools/ci_capture.py python -m ziglang build test --summary all
       - name: Reject unsupported product targets
         run: python tools/ci_capture.py python tools/check_application_targets.py
+      - name: Reject unsupported product targets independently in Zig (shadow)
+        run: |
+          ROOT="$PWD"
+          ZIG_EXE="$(python -c 'import pathlib, ziglang; print(pathlib.Path(ziglang.__file__).parent / "zig")')"
+          cd tools/zig
+          python -m ziglang build --summary all
+          ./zig-out/bin/corex-check-targets --root "$ROOT" --zig "$ZIG_EXE"
       - name: Test real processes (Debug; validation only)
         run: python tools/ci_capture.py python tools/test_bootstrap.py
       - name: Build independent bootstraps (ReleaseSafe)

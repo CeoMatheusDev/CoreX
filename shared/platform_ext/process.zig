@@ -61,11 +61,24 @@ pub fn runValidation(a: std.mem.Allocator, io: std.Io, executable: []const u8, p
     if (!std.fs.path.isAbsolute(executable) or !std.fs.path.isAbsolute(project)) return error.AbsolutePathRequired;
     if (timeout_ms == 0) return error.InvalidTimeout;
     if (@import("builtin").os.tag == .windows and !std.mem.endsWith(u8, executable, ".exe")) return error.NativeExecutableRequired;
+    return runCommand(a, io, executable, &.{ executable, "--project", project, "--headless", "--validate-only" }, .inherit, timeout_ms);
+}
+
+/// Run an explicitly selected executable without a shell. Both streams are
+/// bounded and a single deadline covers collection and waiting for exit. On
+/// timeout cleanup terminates/reaps the child; the OS may delay cleanup itself.
+/// Only the direct child is owned/reaped; descendants are not a sandbox.
+/// Callers own stdout/stderr on success and release them via release().
+pub fn runCommand(a: std.mem.Allocator, io: std.Io, executable: []const u8, argv: []const []const u8, cwd: std.process.Child.Cwd, timeout_ms: u32) !Result {
+    if (!std.fs.path.isAbsolute(executable)) return error.AbsolutePathRequired;
+    if (argv.len == 0 or !std.mem.eql(u8, argv[0], executable)) return error.InvalidArguments;
+    if (timeout_ms == 0) return error.InvalidTimeout;
     const timeout: std.Io.Timeout = .{ .duration = .{ .raw = .fromMilliseconds(timeout_ms), .clock = .awake } };
     const deadline = timeout.toDeadline(io);
     var child = try std.process.spawn(io, .{
         .exe = .{ .explicit = .{ .dir = .cwd(), .path = executable } },
-        .argv = &.{ executable, "--project", project, "--headless", "--validate-only" },
+        .argv = argv,
+        .cwd = cwd,
         .stdin = .ignore,
         .stdout = .pipe,
         .stderr = .pipe,
@@ -109,4 +122,59 @@ pub fn runValidation(a: std.mem.Allocator, io: std.Io, executable: []const u8, p
 
 test "child validation requires explicit absolute executable and project" {
     try std.testing.expectError(error.AbsolutePathRequired, runValidation(std.testing.allocator, std.testing.io, "player", "/Game.proj", 100));
+}
+
+test "generic command validates executable, arguments and deadline" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    try std.testing.expectError(error.AbsolutePathRequired, runCommand(a, io, "relative", &.{"relative"}, .inherit, 1));
+    try std.testing.expectError(error.InvalidArguments, runCommand(a, io, "/absolute", &.{}, .inherit, 1));
+    try std.testing.expectError(error.InvalidArguments, runCommand(a, io, "/absolute", &.{"different"}, .inherit, 1));
+    try std.testing.expectError(error.InvalidTimeout, runCommand(a, io, "/absolute", &.{"/absolute"}, .inherit, 0));
+}
+
+test "generic command captures both streams and nonzero status" {
+    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const executable = "/bin/sh";
+    const result = try runCommand(a, io, executable, &.{ executable, "-c", "printf stdout; printf stderr >&2; exit 7" }, .inherit, 3000);
+    defer release(a, result);
+    try std.testing.expectEqualStrings("stdout", result.stdout);
+    try std.testing.expectEqualStrings("stderr", result.stderr);
+    try std.testing.expectEqual(std.process.Child.Term{ .exited = 7 }, result.term);
+}
+
+test "generic command deadline covers closed pipes and TERM-resistant child" {
+    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const executable = "/bin/sh";
+    try std.testing.expectError(error.Timeout, runCommand(a, io, executable, &.{ executable, "-c", "exec 1>&- 2>&-; trap '' TERM; while :; do :; done" }, .inherit, 150));
+}
+
+test "generic command honors child working directory" {
+    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "marker", .data = "" });
+    const executable = "/bin/sh";
+    const result = try runCommand(a, io, executable, &.{ executable, "-c", "test -f marker && printf found" }, .{ .dir = tmp.dir }, 3000);
+    defer release(a, result);
+    try std.testing.expectEqual(std.process.Child.Term{ .exited = 0 }, result.term);
+    try std.testing.expectEqualStrings("found", result.stdout);
+}
+
+test "generic command rejects output beyond capture limit" {
+    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
+    const executable = "/bin/sh";
+    try std.testing.expectError(error.StreamTooLong, runCommand(std.testing.allocator, std.testing.io, executable, &.{ executable, "-c", "while :; do printf '01234567890123456789012345678901'; done" }, .inherit, 3000));
+}
+
+test "generic command handles collection allocation failure" {
+    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
+    const executable = "/bin/sh";
+    try std.testing.expectError(error.OutOfMemory, runCommand(std.testing.failing_allocator, std.testing.io, executable, &.{ executable, "-c", "printf data" }, .inherit, 3000));
 }
