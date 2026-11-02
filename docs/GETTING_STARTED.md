@@ -13,25 +13,25 @@ Não substitua a versão do Zig silenciosamente. O projeto fixa APIs e dependên
 
 ## 2. Obter o código
 
-\`\`\`sh
+```sh
 git clone https://github.com/CeoMatheusDev/CoreX.git
 cd CoreX
-\`\`\`
+```
 
 ## 3. Executar testes dos contratos compartilhados
 
-\`\`\`sh
+```sh
 cd shared
 zig build test --summary all
 zig build test -Doptimize=ReleaseSafe --summary all
 cd ..
-\`\`\`
+```
 
 O pacote compartilhado testa parsing/validação dos documentos, presets, resolução, ownership, limites e DTO C23. Consulte shared/README.md para a API e cobertura detalhadas.
 
 ## 4. Compilar Editor e Runtime
 
-\`\`\`sh
+```sh
 cd editor
 zig build
 zig build test --summary all
@@ -39,37 +39,37 @@ cd ../runtime
 zig build
 zig build test --summary all
 cd ..
-\`\`\`
+```
 
 Cada aplicação instala seu executável e os recursos de distribuição em seu próprio diretório zig-out. Mantenha binário e diretório share/corex juntos ao mover a instalação.
 
 ## 5. Validar um projeto
 
-\`\`\`sh
+```sh
 runtime/zig-out/bin/CoreXRuntime \\
   --project docs/examples/EmptyGameV2.proj \\
   --headless --validate-only
-\`\`\`
+```
 
 O modo valida o documento, a distribuição e os parâmetros de preset. Não carrega cena, assets ou scripts, não cria dispositivo gráfico e não inicia simulação.
 
 Para executar a validação cruzada do Editor contra o Runtime:
 
-\`\`\`sh
+```sh
 editor/zig-out/bin/CoreXEditor \\
   --project docs/examples/EmptyGameV2.proj \\
   --headless --validate-only \\
   --check-runtime "$PWD/runtime/zig-out/bin/CoreXRuntime"
-\`\`\`
+```
 
 O caminho do Runtime precisa ser absoluto. Esse comando inicia o processo indicado e, portanto, só deve ser usado com um executável confiável. Não é um mecanismo de sandbox.
 
 ## 6. Scripts de verificação
 
-\`\`\`sh
+```sh
 python tools/check_contract_fixtures.py
 python tools/test_bootstrap.py
-\`\`\`
+```
 
 O teste de bootstrap requer os dois executáveis compilados. Os testes e seus limites estão descritos em APPLICATION_PROGRESS.md e APPLICATION_CLI.md.
 
