@@ -5,12 +5,18 @@ const World = @import("ecs/ecs.zig").World;
 const Renderer = @import("graphics/renderer/render.zig").Renderer;
 const JobSystem = @import("jobs/job_system.zig").JobSystem;
 const EventBus = @import("events/event.zig").EventBus;
+const Event = @import("events/event.zig").Event;
 const AudioEngine = @import("audio/audio.zig").AudioEngine;
 const AnimationSystem = @import("animation/animation.zig").AnimationSystem;
 const Scene = @import("scene/scene.zig").Scene;
 const Serializer = @import("serialization/serializer.zig").Serializer;
 const AssetPipeline = @import("assets/asset.zig").AssetPipeline;
 const Profiler = @import("profiler/profiler.zig").Profiler;
+
+fn countEvent(context: *anyopaque, _: Event) void {
+    const count: *usize = @ptrCast(@alignCast(context));
+    count.* += 1;
+}
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -47,9 +53,12 @@ pub fn main() !void {
     defer jsys.deinit();
     std.debug.print("Job System ativo — capacidade: {d}\n", .{jsys.capacity});
 
-    var bus = EventBus.init(allocator);
-    bus.publish(.{ .id = 42, .payload = "corex_event" });
-    std.debug.print("Event Bus ativo — evento 42 publicado\n", .{});
+    var bus = try EventBus.init(allocator, 8);
+    defer bus.deinit() catch unreachable;
+    var received: usize = 0;
+    _ = try bus.subscribe(42, countEvent, &received);
+    try bus.publish(.{ .id = 42, .payload = "corex_event" });
+    std.debug.print("Event Bus síncrono — entregas: {d}\n", .{received});
 
     var aud = try AudioEngine.init(allocator);
     defer aud.deinit();

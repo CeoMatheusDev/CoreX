@@ -26,6 +26,7 @@ pub const Renderer = struct {
     }
 
     pub fn submit(self: *Renderer, commands: []const DrawCommand) void {
-        self.backend.submit(commands);
+        _ = self;
+        NullBackend.submit(commands);
     }
 };

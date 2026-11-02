@@ -10,8 +10,9 @@ pub fn main() !void {
     var sys = try JobSystem.init(std.heap.page_allocator);
     defer sys.deinit();
 
-    const job = Job{ .name = "test", .func = dummyJob, .ctx = null };
+    var context: u8 = 0;
+    const job = Job{ .name = "test", .func = dummyJob, .ctx = &context };
     try sys.submit(job);
-    sys.executeAll();
+    try sys.executeAll();
     std.debug.print("Job System OK\n", .{});
 }

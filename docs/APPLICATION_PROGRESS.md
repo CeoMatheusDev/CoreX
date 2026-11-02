@@ -4,6 +4,30 @@
 
 ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
 
+## Continuação — Event Bus síncrono do core legado
+
+- O antigo `publish` descartava o evento. O core agora oferece inscrições filtradas por ID, callbacks síncronos em ordem de registro, remoção e capacidade fixa pré-alocada. Reentrada e mutação do mesmo bus durante callback são rejeitadas; IDs inativos não são reutilizados. Contextos e payloads são emprestados e o bus não é thread-safe. Contrato e exemplo: `docs/EVENT_BUS.md`.
+- A demonstração legada registra um callback e verifica entrega; um teste liga publicação à fila sequencial de jobs. Trata-se de componentes legados, **não** da integração do novo Runtime, de input por tick ou de um sistema paralelo.
+- Linux local: build Debug e **17/17 testes** legados em Debug e ReleaseSafe passaram; Runtime Debug/ReleaseSafe passaram a partir do cache; bootstrap de integração **29/29** passou. `zig build check -Dtarget=x86_64-windows-gnu -j2` compilou executável e testes legados, sem executá-los no Windows. O build Linux usou o symlink temporário da biblioteca X11 explicado abaixo. O workflow legado foi atualizado, mas não executado remotamente nesta fatia.
+
+## Continuação — correções da fila e confirmação de ticks
+
+- Corrigida a fila legada: `executeAll` removia nenhum job, então repetia trabalho em chamadas subsequentes. Agora processa o lote inicial em FIFO uma vez; jobs adicionados por callbacks ficam para o próximo lote, mesmo com realocação. Execução recursiva retorna `ReentrantExecution`. Falha de alocação não remove jobs existentes; o teste histórico de jobs foi atualizado para o contexto não anulável e a nova assinatura. A fila continua sequencial, sem sincronização, sem workers/cancelamento e não está ligada ao Runtime. O proprietário mantém contexto/nome vivos e não destrói a fila durante callback.
+- O agendador de tempo tinha outra armadilha: detectar overflow apenas no `commitTick` podia ocorrer **depois** dos efeitos do tick. `nextTick` permite preflight e `runDue` verifica antes de chamar cada callback, aplica o budget e confirma apenas sucessos. Erros preservam o tick falho e o backlog, não revertem efeitos já executados pelo callback; reentrada pelos métodos é recusada. Não se pressupõe retry seguro. Esse driver permanece isolado, sem loop/core/replay.
+- Testes locais Linux: legado Debug e ReleaseSafe **8/8**, Runtime Debug e ReleaseSafe **10/10**, bootstrap de integração **29/29**; builds Debug Editor/Runtime/core passaram. Windows x86_64 GNU compilou Runtime e testes, sem execução nativa. Shared Debug e Editor Debug passaram a partir do cache local. Nenhuma CI remota foi executada para estas alterações. O build legado local usou o symlink temporário da biblioteca X11 explicado abaixo.
+
+## Continuação — contabilidade de tempo fixo do Runtime
+
+- `runtime/src/timing.zig` implementa apenas a contabilidade inteira da frequência do schema (1–1000 Hz): fase em nanossegundos × Hz, limite de planejamento por iteração, confirmação explícita após tick bem-sucedido e backlog preservado. Alpha só está disponível quando não há ticks inteiros pendentes. Erros de overflow e confirmação sem tick não alteram o estado.
+- São **7 testes aritméticos** mais o smoke de imports do Runtime: taxas e limites, fronteiras e frequência racional 60 Hz, partições de tempo, atraso/catch-up, confirmação, overflow e deltas grandes. Debug e ReleaseSafe passaram (8/8 em cada); `runtime build check` passou a compilar também os testes para Windows x86_64 GNU, sem executá-los. Shared Debug 43/43, Editor Debug 2/2 e integração dos bootstraps Debug 29/29 passaram localmente. CI foi atualizada para testar Runtime ReleaseSafe, mas não foi executada remotamente nesta fatia.
+- O módulo **não está ligado ao bootstrap ou a um loop**: não implementa clock, simulação, input, jobs, replay, política de pausa, logs de atraso ou estados de interpolação. `--validate-only` não gera ticks; execução normal continua recusada sem core. Orquestração e determinismo real continuam P07, sem promessa de paridade entre plataformas.
+
+## Continuação — build legado e testes de fumaça (2026-11-02)
+
+- P04: identificada uma solução alternativa para o cache de tarballs do Zig 0.17.0, que antes reempacotava o conteúdo com uma pasta externa adicional. `tools/prepare_legacy_deps.py` extrai as releases fixadas após verificar SHA-256 e valida o hash de pacote Zig contra o manifesto, sem alterar versões. Cache global e de pacotes isolados foram usados para verificar a reprodução. O comando normal sem preparar o cache permanece sujeito ao problema; não é uma correção upstream do Zig.
+- `zig build test` da raiz apontava para `src/main.zig`, que não tinha testes. Agora executa quatro testes de fumaça explícitos: lifecycle, IDs ECS, expansão/execução de jobs e submissão ao backend null. Eles revelaram e permitiram corrigir erros de compilação antes ocultos em `JobSystem.executeAll` e `Renderer.submit`. Não substituem a suíte histórica nem testam GPU, gameplay ou recursos reais.
+- Linux local: preparador e 3 testes Python passaram; `zig build` passou; 4/4 testes Zig passaram em Debug e ReleaseSafe. O teste Debug também passou com caches Zig isolados. O ambiente só possui `libX11.so.6`; para a execução local foi usado um symlink temporário de `libX11.so` via `LIBRARY_PATH`. A CI usa `libx11-dev` em vez desse artifício. Workflow novo escrito, ainda não executado no GitHub; Windows nativo/cross não foi validado nesta fatia.
+
 ## Etapa atual — Windows/Linux, 3D e UI/Canvas
 
 Escopo corrigido pelo usuário: apenas Windows/Linux; Editor com 3D e UI/Canvas, sem modo de cena/gameplay 2D; Vulkan/OpenGL previstos nos dois e D3D11/D3D12 apenas Windows. Decisões e alternativas: **ADR-003**.
@@ -89,10 +113,10 @@ O teste chamado Editor→Runtime ainda representa **papéis de consumidor dentro
 
 | ID | Responsável | Próximo trabalho / justificativa |
 | --- | --- | --- |
-| P04 | Build/CI | Resolver build legado das dependências. Download por curl dos tags e `zig fetch` local retornaram hashes esperados; `zig build test` legado ainda detectou pacotes intermediários `N-V-...` com diretório wrapper e hash incompatível. Preservados hashes/versões originais, sem alteração silenciosa. |
+| P04 (parcial) | Build/CI | Preparador com hashes verificados contorna o wrapper incorreto no cache; build e quatro testes de fumaça passaram localmente em Linux. Validar o novo workflow remoto, ampliar a cobertura legado e investigar correção upstream do Zig. |
 | P05 | Core/renderer | Device/backend real, capacidades pré-device, viewport e draw commands da UI. Backend null não é renderer real. |
 | P06 | Core/reflexão | Inspetor genérico, edição e serialização de componentes/cenas reais. |
-| P07 | Core/jobs + aplicações | Fixed timestep/replay integrados a input/jobs e budgets medidos. Nenhuma simulação foi implementada nesta etapa. |
+| P07 (parcial) | Core/jobs + aplicações | Contabilidade racional de ticks implementada e testada isoladamente; faltam loop real, replay, input/jobs integrados, política de relógio e budgets medidos. Nenhuma simulação foi implementada. |
 | P08 | Plataforma/Zigway/ZyntraUI | Superfície/input/DPI e interop Windows/Linux; melhorias upstream autorizadas, com testes e versões fixadas. macOS removido do escopo (ADR-003). |
 | P09 | Core + gameplay | Header público `engine_api.h`, negociação de ABI, C++20, sol2 e VM Lua 5.4 única. DTO privado de gráficos não substitui essa API. |
 | P10/P15 (parcial) | Aplicações | CLI, logger de bootstrap, builds e filho de validação implementados. Faltam persistência atômica/backup/conflitos, logger concorrente/frame, UI real 3D/Canvas e lifecycle completo de Play. |

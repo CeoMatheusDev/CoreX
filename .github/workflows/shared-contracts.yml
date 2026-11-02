@@ -57,6 +57,9 @@ jobs:
         run: |
           cd editor && python ../tools/ci_capture.py python -m ziglang build -Doptimize=ReleaseSafe --summary all
           cd ../runtime && python ../tools/ci_capture.py python -m ziglang build -Doptimize=ReleaseSafe --summary all
+      - name: Test runtime accounting (ReleaseSafe)
+        working-directory: runtime
+        run: python ../tools/ci_capture.py python -m ziglang build test -Doptimize=ReleaseSafe --summary all
       - name: Test real processes (ReleaseSafe; validation only)
         run: python tools/ci_capture.py python tools/test_bootstrap.py
       - name: Cross-compile Windows contracts (not native execution)
