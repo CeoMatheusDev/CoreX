@@ -42,7 +42,7 @@ zig fmt --check shared
 c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror -fsyntax-only -x c++ shared/graphics_abi.h
 ```
 
-O workflow `shared-contracts.yml` configura Debug/ReleaseSafe em Linux e cross-compilação Windows. Ainda não foi executado no GitHub nesta sessão. Não é a matriz final de CI das duas aplicações.
+O workflow `shared-contracts.yml` configura Debug/ReleaseSafe em Linux e cross-compilação Windows. Resultados confirmados por commit e links de CI estão em `docs/APPLICATION_PROGRESS.md`. Não é a matriz final de CI das duas aplicações.
 
 ## API Zig e ownership
 

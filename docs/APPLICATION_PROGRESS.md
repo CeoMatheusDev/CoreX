@@ -39,7 +39,7 @@ Escopo corrigido pelo usuário: apenas Windows/Linux; Editor com 3D e UI/Canvas,
 
 Presets/DTO C23 v1 não foram modificados semanticamente. `.proj` segue somente leitura; testes comparam bytes/mtime. Testes de processo cobrem captura dos dois pipes, timeout/reap de filho resistente a TERM, flood/limites, protocolo e fingerprint; não cobrem árvores de processos nem crash/SIGINT do Editor.
 
-**Não há renderização GPU, UI/viewport real, cenas/assets/gameplay carregados, simulação/ticks, persistência atômica ou snapshots funcionais.** Elegibilidade de backend não comprova implementação/capacidade de hardware. Não se afirma CI verde desta branch antes de um run confirmado, nem execução nativa Windows.
+**Não há renderização GPU, UI/viewport real, cenas/assets/gameplay carregados, simulação/ticks, persistência atômica ou snapshots funcionais.** Elegibilidade de backend não comprova implementação/capacidade de hardware. A CI Linux foi confirmada para o commit de código `f540225`: [run 41367124736](https://github.com/CeoMatheusDev/CoreX/actions/runs/41367124736), **success**, job Ubuntu 24.04 em 5m24s. Contratos nos dois modos, interação, seis recusas, integração Debug/ReleaseSafe e cross Windows passaram. Não há execução nativa Windows. Atualizações posteriores somente deste relatório/README não alteram o código validado.
 
 ## Etapa 1 — contratos originais (histórico)
 
