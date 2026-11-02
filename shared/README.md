@@ -15,14 +15,15 @@ zig build check -Dtarget=x86_64-windows-gnu -j2 --summary all
 
 `check` compila os testes para outro alvo sem executá-los. **Não equivale a teste nativo Windows.** O primeiro cross-link pode demorar por compilar o CRT.
 
-Sem Zig no PATH, use um ambiente virtual Python fora do repositório e instale a distribuição exata, com hashes das wheels:
+Se você não tiver Zig 0.17.0 no PATH, use o ambiente virtual isolado do repositório (`tools/.venv/`); não instale pacotes Python globalmente:
 
 ```sh
-# Na raiz do repositório, com um ambiente virtual já ativado:
-python -m pip install --require-hashes --only-binary=:all: -r tools/zig-requirements.txt
-python -m ziglang version
+# Na raiz do repositório:
+python3 -m venv tools/.venv
+tools/.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r tools/python/requirements-zig.txt
+tools/.venv/bin/python -m ziglang version
 cd shared
-python -m ziglang build test --summary all
+tools/.venv/bin/python -m ziglang build test --summary all
 ```
 
 O toolchain de build suportado usa wheels Linux; macOS foi removido do produto (ADR-003). Não foi encontrada wheel Windows para 0.17.0; suporte nativo de CI Windows continua pendente (P16). Não adotar outra versão de Zig silenciosamente.
@@ -37,7 +38,7 @@ zig test -I . -lc root.zig -cflags -std=c23 -Wall -Wextra -Werror -- graphics_ab
 Na raiz:
 
 ```sh
-python tools/check_contract_fixtures.py
+tools/.venv/bin/python tools/python/check_contract_fixtures.py
 zig fmt --check shared
 c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror -fsyntax-only -x c++ shared/graphics_abi.h
 ```
@@ -83,7 +84,7 @@ O DTO usa membros de 4 bytes e tem 116 bytes no v1, sem packing. A escolha custa
 
 43 testes compartilhados; resultados por modo em `docs/APPLICATION_PROGRESS.md`. Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, erros de versão, exatidão decimal, ownership, limites, 256 mutações determinísticas e falhas de alocação injetadas. Também exercitam a ABI C23 real.
 
-Os testes Zig Editor→Runtime continuam sendo round-trip em memória. Adicionalmente, `tools/test_bootstrap.py` testa os **dois executáveis em processos reais**, apenas no escopo de validação. São 29 testes de integração locais, incluindo supervisão e JSON lines. Play de jogo, snapshots ZyntraUI e GPU real continuam não implementados.
+Os testes Zig Editor→Runtime continuam sendo round-trip em memória. Adicionalmente, `tools/python/test_bootstrap.py` testa os **dois executáveis em processos reais**, apenas no escopo de validação. São 29 testes de integração locais, incluindo supervisão e JSON lines. Play de jogo, snapshots ZyntraUI e GPU real continuam não implementados.
 
 Limitações explícitas:
 
