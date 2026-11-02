@@ -13,7 +13,7 @@
 - Testes nativos Linux independentes passaram em Debug e ReleaseSafe: Shared **62/62**, Editor **36/36**, Runtime **16/16** e `tools/zig` **51/51**. Esses resultados não incluem a build raiz nem validam janela nativa/Vulkan.
 - `zig build check -Dtarget=x86_64-windows-gnu` compilou Shared, Editor, Runtime e `tools/zig`. Isso é cross-compilação; nenhum executável Windows foi executado.
 - As builds instaladas nativas do Editor e Runtime passaram, e `tools/test_bootstrap.py` passou **33/33** testes contra os binários reais, incluindo handshake entre processos. Isso valida o protocolo de bootstrap, não gameplay, UI ou renderização GPU.
-- A CI remota do commit `a686fe8` passou em Contracts ([run 41542060627](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542060627)) e Legacy Linux ([run 41542061137](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542061137)). Esses resultados correspondem ao commit indicado; serão repetidos após esta atualização documental.
+- A CI remota passou em Contracts e Legacy Linux para a revisão inicial do PR: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542060627) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542061137). Após registrar os resultados, a revisão documental `320afac` também passou em ambos: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287660) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287419).
 - `zig build test -j2` na raiz não pôde resolver os pins de Zigway/ZyntraUI por `ResolvConfParseFailed`. Não alterei `/etc/resolv.conf`, dependências ou hashes; a build raiz não foi validada nesta fatia.
 
 ## Registro cronológico
