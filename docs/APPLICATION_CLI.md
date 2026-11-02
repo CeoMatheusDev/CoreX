@@ -1,4 +1,4 @@
-> **Perfil atual (ADR-003):** Windows/Linux, autoria 3D e UI/Canvas, sem cena 2D. Reader aceita schemas [1,2]; novos projetos usam `EmptyGameV2.proj`.
+> **Perfil atual (ADR-003):** Windows/Linux, autoria 3D e UI/Canvas, sem cena 2D. Reader aceita schemas [1,2,3]; novos projetos V3 selecionam explicitamente `renderer.profile`. O profile é identidade solicitada, não prova de Renderer funcional. Contrato: [PROJECT_SCHEMA_V3.md](PROJECT_SCHEMA_V3.md); bloqueio de integração Vulkan/surface: [ADR-004](ADR-004-vulkan-surface-integration.md).
 
 # CLI das aplicações — bootstrap de validação
 
@@ -79,14 +79,14 @@ Eventos principais:
 - `application.version`: identidade de produto compilada (`engine_version`) e token SemVer do `.proj`; `core_abi_checked=false`.
 - `application.starting`: intenção/mode, com `core_linked=false`.
 - `project.document_validated`: schema/metadados validados; **não** resolução segura de recursos.
-- `project.engine_compatibility`: classifica `same_version` ou uma compatibilidade exata autorizada pela allow-list do manifesto; incompatibilidade gera `project.engine_incompatible`.
+- `project.engine_compatibility`: classifica `same_version` ou uma compatibilidade exata autorizada pela política compilada `shared/compatibility_policy.zig`; a lista no manifesto é apenas declaração e incompatibilidade gera `project.engine_incompatible`.
 - `distribution.manifest_corrupted` / `distribution.invalid`: bytes do manifesto divergentes versus tabela/hash/contratos inválidos ou ausentes.
 - `graphics.config_resolved`: 27 valores concretos, overrides e identidade de tabela; `gpu_created=false`, `capabilities_checked=false`.
 - `editor.validation_complete` / `runtime.validation_complete`: escopo `document_and_presets`, fingerprint e flags explícitas de serviços ainda não carregados.
 - `runtime.check_starting` / `runtime.output` / `runtime.output_invalid` / `runtime.check_complete` / `runtime.check_failed`: supervisão pelo Editor. Os registros do filho ficam aninhados em `fields.record`, preservando origem/sessão/seq originais.
 - `application.core_unavailable`: erro em execução real solicitada antes da integração do core.
 
-O fingerprint v3 inclui o perfil `desktop-3d-canvas-v1`, além do modelo normalizado completo do `.proj`, parâmetros gráficos resolvidos e manifesto validado/empacotado. Não inclui relógio, PID, sessão ou CWD. Não é assinatura/autenticação, hash de assets ou comprovação de determinismo da simulação. Um `.proj` equivalente em defaults opcionais produz a mesma identidade; um projeto com configuração/seed diferente não deve confirmá-la.
+O fingerprint v4 inclui separadamente o perfil `desktop-3d-canvas-v1` e, quando presente em V3, o Renderer Profile solicitado, além do modelo normalizado completo do `.proj`, parâmetros gráficos resolvidos e manifesto validado/empacotado. Não inclui relógio, PID, sessão ou CWD. Não é assinatura/autenticação, hash de assets ou comprovação de determinismo da simulação/execução gráfica. Um `.proj` equivalente em defaults opcionais produz a mesma identidade; um projeto com configuração, Renderer Profile ou seed diferente não deve confirmá-la.
 
 ### Limites da captura
 

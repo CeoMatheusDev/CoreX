@@ -11,7 +11,8 @@ const paths = [_][]const u8{
     "docs/examples/EmptyGameV2.proj",             "shared/fixtures/EmptyGameV2.proj",
     "docs/examples/presets.zon",                  "shared/fixtures/presets.zon",
     "docs/schemas/project-v1.schema.json",        "docs/schemas/project-v2.schema.json",
-    "shared/fixtures/distribution.template.json",
+    "shared/fixtures/distribution.template.json", "docs/examples/EmptyGameV3.proj",
+    "shared/fixtures/EmptyGameV3.proj",           "docs/schemas/project-v3.schema.json",
 };
 const schema2_head = "{\"properties\":{\"schema_version\":{\"const\":2},\"engine\":{\"properties\":{\"graphics_backend\":{\"enum\":";
 const schema2_tail = "}}}}}";
@@ -112,13 +113,12 @@ test "valid actual inputs and CLI argument behavior" {
 }
 
 test "all documented pairs report mismatch and both paths" {
-    const errors = [_][]const u8{ "V1FixtureMismatch", "V2FixtureMismatch", "PresetsFixtureMismatch" };
-    for (errors, 0..) |error_name, n| {
+    const errors = [_]struct { i: usize, name: []const u8 }{ .{ .i = 0, .name = "V1FixtureMismatch" }, .{ .i = 2, .name = "V2FixtureMismatch" }, .{ .i = 4, .name = "PresetsFixtureMismatch" }, .{ .i = 9, .name = "V3FixtureMismatch" } };
+    for (errors) |case| {
         var f = try Fixture.init();
         defer f.deinit();
-        const i = n * 2;
-        try f.write(paths[i], "different");
-        try f.expect(error_name, &.{ paths[i], paths[i + 1] });
+        try f.write(paths[case.i], "different");
+        try f.expect(case.name, &.{ paths[case.i], paths[case.i + 1] });
     }
 }
 
@@ -132,7 +132,7 @@ test "every input is required" {
 }
 
 test "malformed JSON is rejected in every parsed file" {
-    for ([_]usize{ 1, 3, 6, 7, 8 }) |i| {
+    for ([_]usize{ 1, 3, 6, 7, 8, 11 }) |i| {
         var f = try Fixture.init();
         defer f.deinit();
         if (i == 1 or i == 3) try f.pair(i - 1, "{") else try f.write(paths[i], "{");
@@ -172,6 +172,22 @@ test "backend order, length, types and presets hash" {
         try setSchema2(&f, backends);
         try f.expect(if (i < 4) "BackendMismatch" else "InvalidContractShape", &.{paths[7]});
     }
+    var profile_fixture = try Fixture.init();
+    defer profile_fixture.deinit();
+    const original_v3_schema = try profile_fixture.root.readFileAlloc(io, paths[11], a, .limited(4 * 1024 * 1024));
+    defer a.free(original_v3_schema);
+    const v3_schema = try std.mem.replaceOwned(u8, a, original_v3_schema, "\"advanced\",\n            \"standard\",\n            \"lite\"", "\"lite\",\n            \"standard\",\n            \"advanced\"");
+    defer a.free(v3_schema);
+    try profile_fixture.write(paths[11], v3_schema);
+    try profile_fixture.expect("RendererProfileMismatch", &.{paths[11]});
+    var invalid_profile_fixture = try Fixture.init();
+    defer invalid_profile_fixture.deinit();
+    const v3_project_source = try invalid_profile_fixture.root.readFileAlloc(io, paths[10], a, .limited(4 * 1024 * 1024));
+    defer a.free(v3_project_source);
+    const v3_project_invalid = try std.mem.replaceOwned(u8, a, v3_project_source, "\"profile\": \"lite\"", "\"profile\": \"future\"");
+    defer a.free(v3_project_invalid);
+    try invalid_profile_fixture.pair(9, v3_project_invalid);
+    try invalid_profile_fixture.expect("RendererProfileMismatch", &.{ paths[11], paths[10] });
     var f = try Fixture.init();
     defer f.deinit();
     try f.pair(4, "modified presets");
@@ -179,7 +195,7 @@ test "backend order, length, types and presets hash" {
 }
 
 test "missing and wrong-shaped fields fail" {
-    for ([_]usize{ 6, 7, 8 }) |i| {
+    for ([_]usize{ 6, 7, 8, 11 }) |i| {
         var f = try Fixture.init();
         defer f.deinit();
         try f.write(paths[i], "{}");

@@ -2,6 +2,8 @@
 
 Decisão: [ADR-003](ADR-003-desktop-3d-canvas.md), conforme correção de escopo do usuário. Schema estrutural: [project-v2.schema.json](schemas/project-v2.schema.json). Exemplo: [EmptyGameV2.proj](examples/EmptyGameV2.proj).
 
+Este documento descreve o contrato V2 sem alterações. O leitor atual também aceita V3 aditivo, definido em [PROJECT_SCHEMA_V3.md](PROJECT_SCHEMA_V3.md); nada nesta especificação torna V3 obrigatório para projetos V2.
+
 ## Compatibilidade e conteúdo
 
 V2 mantém **todas** as propriedades, tipos, defaults, limites, invariantes, parsing estrito, paths, ownership e canonicalização definidos em [PROJECT_SCHEMA_V1.md](PROJECT_SCHEMA_V1.md), com exatamente estas mudanças:
@@ -31,6 +33,6 @@ V1 com backend removido continua inspecionável em `--validate-only`, mas sua ex
 
 `--validate-only` é validação de documento/presets, não teste de executabilidade neste SO. Assim permite validar projeto D3D no Linux e registra `application.target_policy.decision=backend_not_on_platform`, com `gpu_created=false` e `renderer_linked=false`. Execução sem essa flag recusa a política inválida antes de criar recursos; política permitida ainda falha com core indisponível nesta fatia. Não há fallback.
 
-O perfil `desktop-3d-canvas-v1` entrou no fingerprint v2, junto do projeto normalizado completo, parâmetros e manifesto. A versão atual do fingerprint é v3 porque o manifesto agora carrega a identidade de produto e o contrato explícito de compatibilidade. Nenhuma das versões do fingerprint altera este schema `.proj`. Fingerprints não incluem relógio/sessão/PID nem provam determinismo de simulação. Editor e Runtime confirmam a mesma configuração pelo módulo compartilhado.
+O perfil `desktop-3d-canvas-v1` entrou no fingerprint v2, junto do projeto normalizado completo, parâmetros e manifesto. Desde V3 do contrato, o fingerprint é v4: inclui também, em campo distinto, o Renderer Profile solicitado. Essa evolução não altera o objeto `.proj` V2 nem seus bytes; detalhes em [PROJECT_SCHEMA_V3.md](PROJECT_SCHEMA_V3.md). Fingerprints não incluem relógio/sessão/PID nem provam determinismo ou execução gráfica. Editor e Runtime usam o mesmo módulo compartilhado.
 
 Sufixos de gameplay suportados nesta entrega: `.dll` no Windows e `.so` no Linux. macOS/`.dylib` são apenas contexto histórico do contrato v1, não alvos de produto v2. Permanecem os limites anteriores: NFC/containment reais pendentes; caminhos não ASCII dentro do documento falham explicitamente até P14.

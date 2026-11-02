@@ -1,22 +1,22 @@
 # CoreX — Arquitetura Técnica
 
+> **Estado real da integração gráfica (2026-11-02):** a seção de pipeline abaixo descreve a arquitetura pretendida, não um caminho Vulkan funcional. `src/graphics/` contém somente Null Backend; não há Vulkan Instance, Surface, Device, Swapchain ou apresentação GPU. Editor/Runtime usam o bootstrap de `shared` e não integram hoje a janela Zigway da árvore legada. A API `.proj`/V3 não prova inicialização gráfica. Ver [ADR-004](ADR-004-vulkan-surface-integration.md).
+
 **Versão:** 0.1.0
 **Linguagem:** Zig 0.17.0
 **Filosofia:** Desenvolvimento próprio, baixo overhead, controle explícito de memória, modularidade.
 
-## Pipeline
+## Pipeline pretendido (GPU ainda não implementada)
 
+```text
+Zigway (janela, somente na árvore legada)
+  → CoreX Application (src/main.zig, executável legado)
+  → CoreX Renderer (src/graphics/renderer/render.zig)
+  → Null Backend (único backend existente; no-op/headless)
+  → sem GPU / sem apresentação
 ```
-Zigway (plataforma/janelas)
-  → CoreX Window
-  → CoreX Application (main.zig)
-  → ZyntraUI (UI renderer-agnostic)
-  → UI Draw Commands
-  → CoreX Renderer (render.zig)
-  → Graphics Abstraction
-  → Graphics Backend (vulkan/null)
-  → GPU / Framebuffer
-```
+
+O pipeline de destino, ainda pendente, conecta uma janela com handles nativos acessíveis ao adaptador privado do Engine, que possui a Vulkan Instance/Surface/Device/Swapchain. Só após apresentação efetiva de frames a ligação Renderer→GPU poderá ser declarada. Editor e Runtime atualmente são bootstraps independentes e ainda não consomem esse Engine gráfico comum.
 
 ## Sistemas Próprios
 
@@ -25,7 +25,7 @@ Zigway (plataforma/janelas)
 - **Job System** (`src/jobs/`): job, job_system, execução sequencial/paralela futura.
 - **Event System** (`src/events/`): event, event_bus.
 - **Scripting** (`src/scripting/`): runtime Lua 5.4.x, allocator adapter, binding, registry, sandbox, debug, profiler.
-- **Graphics** (`src/graphics/`): renderer próprio, pass, backend null (extensível para Vulkan).
+- **Graphics** (`src/graphics/`): Renderer/DrawCommand mínimos e Null Backend no-op; nenhum passe/GPU/pipeline Vulkan funcional. A integração Vulkan está bloqueada conforme ADR-004.
 - **Platform** (`src/platform/zigway.zig`): integração Zigway v0.1.0-alpha.4.
 - **Window** (`src/window/zigway.zig`): integração Zigway.
 - **UI** (`src/ui/zyntra.zig`): integração ZyntraUI v1.44.1.

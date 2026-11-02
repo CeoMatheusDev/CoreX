@@ -1,4 +1,4 @@
-//! Shared .proj v1 document contract. Editor owns saving; Runtime only reads.
+//! Shared .proj v1/v2/v3 document contract. Editor owns saving; Runtime only reads.
 //! This module validates documents, not filesystem resources, ABI, or GPU support.
 const std = @import("std");
 const validation = @import("validation.zig");
@@ -18,15 +18,17 @@ pub const Error = error{
 };
 const DecodeError = error{ OutOfMemory, InvalidField };
 
-// Legacy tokens remain for v1 inspection only; v2 uses the product's four APIs.
+// Legacy backend tokens remain for v1 inspection; v2/v3 use the product APIs.
 pub const Backend = enum { vulkan, webgpu, d3d12, metal, d3d11, opengl };
+pub const RendererProfile = enum { advanced, standard, lite };
+
 pub fn backendAllowedInSchema(version: u32, backend: Backend) bool {
     return switch (version) {
         1 => switch (backend) {
             .vulkan, .webgpu, .d3d12, .metal => true,
             else => false,
         },
-        2 => switch (backend) {
+        2, 3 => switch (backend) {
             .vulkan, .opengl, .d3d11, .d3d12 => true,
             else => false,
         },
@@ -39,6 +41,8 @@ pub const Project = struct {
     project: struct { name: []const u8, uuid: []const u8, version: []const u8, created_at: []const u8 },
     engine: struct { version: []const u8, graphics_backend: Backend },
     renderer: struct {
+        /// Absent in legacy schemas v1/v2; v3 requires an explicit selection.
+        profile: ?RendererProfile = null,
         graphics_preset: presets.Name,
         vsync: bool,
         initial_resolution: struct { width: u32, height: u32 },
@@ -107,7 +111,7 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8, diagnostic: *Diag
     diagnostic.set("/schema_version");
     if (version != .number_string) return error.InvalidField;
     const v = validation.exactU32(version.number_string) catch return error.InvalidField;
-    if (v != 1 and v != 2) return error.UnsupportedSchemaVersion;
+    if (v != 1 and v != 2 and v != 3) return error.UnsupportedSchemaVersion;
     diagnostic.set("");
     const value = try decode(Project, a, tree, "", diagnostic);
     try validate(value, diagnostic);
@@ -211,8 +215,10 @@ fn pathCheck(path: []const u8, d: *Diagnostic, pointer: []const u8) !void {
 }
 
 pub fn validate(p: Project, d: *Diagnostic) Error!void {
-    try require(p.schema_version == 1 or p.schema_version == 2, d, "/schema_version");
+    try require(p.schema_version == 1 or p.schema_version == 2 or p.schema_version == 3, d, "/schema_version");
     try require(backendAllowedInSchema(p.schema_version, p.engine.graphics_backend), d, "/engine/graphics_backend");
+    // Preserve v1/v2 documents without inventing a profile. V3 is explicit.
+    try require((p.schema_version == 3) == (p.renderer.profile != null), d, "/renderer/profile");
     try require(validation.projectName(p.project.name), d, "/project/name");
     try require(validation.uuidV4(p.project.uuid), d, "/project/uuid");
     try require(validation.semver(p.project.version), d, "/project/version");
@@ -282,6 +288,7 @@ pub fn serialize(allocator: std.mem.Allocator, p: Project, d: *Diagnostic) Error
         .project = p.project,
         .engine = p.engine,
         .renderer = .{
+            .profile = p.renderer.profile,
             .graphics_preset = p.renderer.graphics_preset,
             .vsync = p.renderer.vsync,
             .initial_resolution = p.renderer.initial_resolution,
@@ -344,14 +351,15 @@ test "document parsing and serialization release every allocation on failure" {
     try @import("testing_allocator.zig").checkAllFailures(allocationProbe, .{});
 }
 
-test "schema v2 backend matrix and legacy v1 round trips" {
+test "schema v1/v2/v3 backend matrix and serialization round trips" {
     const a = std.testing.allocator;
     var d: Diagnostic = .{};
     var document = try parse(a, @embedFile("fixtures/EmptyGameV2.proj"), &d);
     defer document.deinit();
-    for ([_]u32{ 1, 2 }) |version| {
+    for ([_]u32{ 1, 2, 3 }) |version| {
         inline for (std.meta.tags(Backend)) |backend| {
             document.value.schema_version = version;
+            document.value.renderer.profile = if (version == 3) .lite else null;
             document.value.engine.graphics_backend = backend;
             const expected = if (version == 1)
                 (backend == .vulkan or backend == .webgpu or backend == .d3d12 or backend == .metal)
@@ -370,5 +378,37 @@ test "schema v2 backend matrix and legacy v1 round trips" {
                 try std.testing.expectEqualStrings("/engine/graphics_backend", d.pointer());
             }
         }
+    }
+}
+
+test "schema v3 preserves explicit renderer identity and legacy projects remain unselected" {
+    const a = std.testing.allocator;
+    var d: Diagnostic = .{};
+    var v3 = try parse(a, @embedFile("fixtures/EmptyGameV3.proj"), &d);
+    defer v3.deinit();
+    try std.testing.expectEqual(@as(u32, 3), v3.value.schema_version);
+    try std.testing.expectEqual(RendererProfile.lite, v3.value.renderer.profile.?);
+
+    inline for (std.meta.tags(RendererProfile)) |profile| {
+        v3.value.renderer.profile = profile;
+        const bytes = try serialize(a, v3.value, &d);
+        defer a.free(bytes);
+        var roundtrip = try parse(a, bytes, &d);
+        defer roundtrip.deinit();
+        try std.testing.expectEqual(profile, roundtrip.value.renderer.profile.?);
+        try std.testing.expectEqualDeep(v3.value, roundtrip.value);
+    }
+
+    inline for (.{ @embedFile("fixtures/EmptyGame.proj"), @embedFile("fixtures/EmptyGameV2.proj") }) |legacy_bytes| {
+        var legacy = try parse(a, legacy_bytes, &d);
+        defer legacy.deinit();
+        try std.testing.expect(legacy.value.renderer.profile == null);
+        const serialized = try serialize(a, legacy.value, &d);
+        defer a.free(serialized);
+        try std.testing.expect(std.mem.indexOf(u8, serialized, "\"profile\"") == null);
+        var legacy_roundtrip = try parse(a, serialized, &d);
+        defer legacy_roundtrip.deinit();
+        try std.testing.expect(legacy_roundtrip.value.renderer.profile == null);
+        try std.testing.expectEqualDeep(legacy.value, legacy_roundtrip.value);
     }
 }

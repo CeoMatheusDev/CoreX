@@ -114,6 +114,13 @@ class BootstrapContracts(unittest.TestCase):
         self.assertFalse(self.event(records, "graphics.config_resolved")["gpu_created"])
         self.assertEqual(self.event(records, "project.engine_compatibility")["compatibility"], "same_version")
 
+    def test_fingerprint_normalizes_json_property_order_and_whitespace(self):
+        first = self.event(self.validate(), "runtime.validation_complete")["fingerprint"]
+        reordered = json.dumps(self.base, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        self.path.write_text(reordered, encoding="utf-8")
+        second = self.event(self.validate(), "runtime.validation_complete")["fingerprint"]
+        self.assertEqual(first, second)
+
     def test_compiled_product_identity_is_exposed_without_opening_a_project(self):
         for executable in (EDITOR, RUNTIME):
             records = self.run_app(executable, "--version")
@@ -148,6 +155,32 @@ class BootstrapContracts(unittest.TestCase):
             os.symlink(target, os.fsencode(self.path))
             fields = self.event(self.validate(expected=3), "project.read_failed")
             self.assertEqual(fields["code"], "UnsupportedProjectPathEncoding")
+
+    def test_v3_renderer_profile_is_explicit_and_separate_from_product_profile(self):
+        value = json.loads((ROOT / "docs/examples/EmptyGameV3.proj").read_text(encoding="utf-8"))
+        self.write(value)
+        records = self.validate()
+        policy = self.event(records, "application.target_policy")
+        resolved = self.event(records, "graphics.config_resolved")
+        self.assertEqual(policy["profile"], "desktop-3d-canvas-v1")
+        self.assertEqual(policy["renderer_profile"], "lite")
+        self.assertEqual(resolved["renderer_profile_requested"], "lite")
+        self.assertFalse(resolved["gpu_created"])
+        self.assertFalse(resolved["capabilities_checked"])
+        lite_fingerprint = self.event(records, "runtime.validation_complete")["fingerprint"]
+        value["renderer"]["profile"] = "advanced"
+        self.write(value)
+        advanced_records = self.validate()
+        self.assertNotEqual(lite_fingerprint, self.event(advanced_records, "runtime.validation_complete")["fingerprint"])
+
+        del value["renderer"]["profile"]
+        self.write(value)
+        fields = self.event(self.validate(expected=3), "project.invalid")
+        self.assertEqual(fields["pointer"], "/renderer/profile")
+        value["renderer"]["profile"] = "future"
+        self.write(value)
+        fields = self.event(self.validate(expected=3), "project.invalid")
+        self.assertEqual(fields["pointer"], "/renderer/profile")
 
     def test_v2_backends_and_host_policy_are_not_gpu_claims(self):
         for backend in ("vulkan", "opengl", "d3d11", "d3d12"):
@@ -204,7 +237,7 @@ class BootstrapContracts(unittest.TestCase):
                 self.event(self.run_app(executable, *args, expected=2), "cli.invalid")
 
     def test_future_missing_and_string_schema_version(self):
-        for version, reason in ((3, "UnsupportedSchemaVersion"), ("1", "InvalidField"), (None, "MissingSchemaVersion")):
+        for version, reason in ((4, "UnsupportedSchemaVersion"), ("1", "InvalidField"), (None, "MissingSchemaVersion")):
             value = copy.deepcopy(self.base)
             if version is None:
                 del value["schema_version"]
@@ -264,6 +297,28 @@ class BootstrapContracts(unittest.TestCase):
         table.write_bytes(original)
         (prefix / "share/corex/distribution.json").write_text("{}", encoding="utf-8")
         self.assertEqual(self.event(self.validate(runtime, expected=4), "distribution.manifest_corrupted")["code"], "ManifestCorrupted")
+
+    def test_manifest_cannot_self_authorize_an_older_project_version(self):
+        prefix, runtime = self.copy_distribution()
+        value = copy.deepcopy(self.base)
+        value["engine"]["version"] = "0.1.0"
+        self.write(value)
+
+        # The real manifest has a valid presets SHA-256 but empty trusted policy.
+        denied = self.validate(runtime, expected=4)
+        fields = self.event(denied, "project.engine_incompatible")
+        self.assertEqual(fields["compatibility"], "incompatible")
+
+        # A forged declaration of compatibility is rejected as corruption before
+        # any authorization/classification can take place.
+        manifest_path = prefix / "share/corex/distribution.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["compatible_project_engine_versions"] = ["0.1.0"]
+        manifest_path.write_text(json.dumps(manifest, separators=(",", ":")) + "\n", encoding="utf-8")
+        forged = self.validate(runtime, expected=4)
+        fields = self.event(forged, "distribution.manifest_corrupted")
+        self.assertEqual(fields["code"], "ManifestCorrupted")
+        self.assertFalse(any(record["event"] == "project.engine_compatibility" for record in forged))
 
     def test_missing_or_relative_child_is_not_path_searched(self):
         self.event(self.check(self.directory / "missing runtime"), "runtime.check_failed")

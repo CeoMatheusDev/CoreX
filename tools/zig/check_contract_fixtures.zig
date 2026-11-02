@@ -14,6 +14,9 @@ const Inputs = struct {
     presets_fixture: []const u8,
     v1_schema: []const u8,
     v2_schema: []const u8,
+    v3_example: []const u8,
+    v3_fixture: []const u8,
+    v3_schema: []const u8,
     manifest: []const u8,
 };
 
@@ -59,6 +62,32 @@ fn checkBackends(a: Allocator, schema: []const u8) !void {
     }
 }
 
+fn checkRendererProfiles(a: Allocator, schema: []const u8, project: []const u8) !void {
+    var doc = try std.json.parseFromSlice(std.json.Value, a, schema, .{});
+    defer doc.deinit();
+    var project_doc = try std.json.parseFromSlice(std.json.Value, a, project, .{});
+    defer project_doc.deinit();
+    const properties = try field(doc.value, "properties");
+    const renderer = try field(try field(properties, "renderer"), "properties");
+    const profile = try field(renderer, "profile");
+    const values = try field(profile, "enum");
+    if (values != .array) return error.InvalidContractShape;
+    const expected = [_][]const u8{ "advanced", "standard", "lite" };
+    if (values.array.items.len != expected.len) return error.RendererProfileMismatch;
+    for (values.array.items, expected) |value, name| {
+        if (value != .string or !std.mem.eql(u8, value.string, name)) return error.RendererProfileMismatch;
+    }
+    const required = try field(try field(properties, "renderer"), "required");
+    if (required != .array or required.array.items.len == 0 or required.array.items[0] != .string or !std.mem.eql(u8, required.array.items[0].string, "profile"))
+        return error.RendererProfileMismatch;
+    const project_renderer = try field(try field(project_doc.value, "renderer"), "profile");
+    if (project_renderer != .string) return error.RendererProfileMismatch;
+    for (values.array.items) |value| {
+        if (value == .string and std.mem.eql(u8, value.string, project_renderer.string)) return;
+    }
+    return error.RendererProfileMismatch;
+}
+
 fn checkHash(a: Allocator, manifest: []const u8, presets: []const u8) !void {
     var doc = try std.json.parseFromSlice(std.json.Value, a, manifest, .{});
     defer doc.deinit();
@@ -82,6 +111,8 @@ fn verify(a: Allocator, input: Inputs) !void {
         return contextualError(error.V1FixtureMismatch, "docs/examples/EmptyGame.proj vs shared/fixtures/EmptyGame.proj");
     if (!std.mem.eql(u8, input.v2_example, input.v2_fixture))
         return contextualError(error.V2FixtureMismatch, "docs/examples/EmptyGameV2.proj vs shared/fixtures/EmptyGameV2.proj");
+    if (!std.mem.eql(u8, input.v3_example, input.v3_fixture))
+        return contextualError(error.V3FixtureMismatch, "docs/examples/EmptyGameV3.proj vs shared/fixtures/EmptyGameV3.proj");
     if (!std.mem.eql(u8, input.presets_example, input.presets_fixture))
         return contextualError(error.PresetsFixtureMismatch, "docs/examples/presets.zon vs shared/fixtures/presets.zon");
     checkVersions(a, input.v1_schema, input.v1_fixture, 1) catch |err|
@@ -90,6 +121,12 @@ fn verify(a: Allocator, input: Inputs) !void {
         return contextualError(err, "v2 version: docs/schemas/project-v2.schema.json and shared/fixtures/EmptyGameV2.proj");
     checkBackends(a, input.v2_schema) catch |err|
         return contextualError(err, "v2 backends: docs/schemas/project-v2.schema.json");
+    checkVersions(a, input.v3_schema, input.v3_fixture, 3) catch |err|
+        return contextualError(err, "v3 version: docs/schemas/project-v3.schema.json and shared/fixtures/EmptyGameV3.proj");
+    checkBackends(a, input.v3_schema) catch |err|
+        return contextualError(err, "v3 backends: docs/schemas/project-v3.schema.json");
+    checkRendererProfiles(a, input.v3_schema, input.v3_fixture) catch |err|
+        return contextualError(err, "v3 renderer profile: docs/schemas/project-v3.schema.json and shared/fixtures/EmptyGameV3.proj");
     checkHash(a, input.manifest, input.presets_fixture) catch |err|
         return contextualError(err, "presets hash: shared/fixtures/distribution.template.json and shared/fixtures/presets.zon");
 }
@@ -125,6 +162,9 @@ fn checkRoot(a: Allocator, io: Io, root: Io.Dir) !void {
         .presets_fixture = try readFile(mem, io, root, "shared/fixtures/presets.zon"),
         .v1_schema = try readFile(mem, io, root, "docs/schemas/project-v1.schema.json"),
         .v2_schema = try readFile(mem, io, root, "docs/schemas/project-v2.schema.json"),
+        .v3_example = try readFile(mem, io, root, "docs/examples/EmptyGameV3.proj"),
+        .v3_fixture = try readFile(mem, io, root, "shared/fixtures/EmptyGameV3.proj"),
+        .v3_schema = try readFile(mem, io, root, "docs/schemas/project-v3.schema.json"),
         .manifest = try readFile(mem, io, root, "shared/fixtures/distribution.template.json"),
     };
     try verify(mem, input);
@@ -158,13 +198,15 @@ fn run(init: std.process.Init) !void {
     };
     defer root.close(init.io);
     try checkRoot(init.gpa, init.io, root);
-    try Io.File.stdout().writeStreamingAll(init.io, "OK: fixtures, versions, backend list and presets SHA-256 match.\n");
+    try Io.File.stdout().writeStreamingAll(init.io, "OK: fixtures V1/V2/V3, versions, backend lists, renderer profile and presets SHA-256 match.\n");
 }
 
 const sample_v1 = "{\"schema_version\":1}";
 const sample_v2 = "{\"schema_version\":2}";
+const sample_v3 = "{\"schema_version\":3,\"renderer\":{\"profile\":\"lite\"}}";
 const schema_v1 = "{\"properties\":{\"schema_version\":{\"const\":1}}}";
 const schema_v2 = "{\"properties\":{\"schema_version\":{\"const\":2},\"engine\":{\"properties\":{\"graphics_backend\":{\"enum\":[\"vulkan\",\"opengl\",\"d3d11\",\"d3d12\"]}}}}}";
+const schema_v3 = "{\"properties\":{\"schema_version\":{\"const\":3},\"engine\":{\"properties\":{\"graphics_backend\":{\"enum\":[\"vulkan\",\"opengl\",\"d3d11\",\"d3d12\"]}}},\"renderer\":{\"required\":[\"profile\"],\"properties\":{\"profile\":{\"enum\":[\"advanced\",\"standard\",\"lite\"]}}}}}";
 const sample_presets = "abc";
 const sample_manifest = "{\"presets_sha256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"}";
 const valid: Inputs = .{
@@ -176,6 +218,9 @@ const valid: Inputs = .{
     .presets_fixture = sample_presets,
     .v1_schema = schema_v1,
     .v2_schema = schema_v2,
+    .v3_example = sample_v3,
+    .v3_fixture = sample_v3,
+    .v3_schema = schema_v3,
     .manifest = sample_manifest,
 };
 
@@ -189,6 +234,9 @@ test "valid fixtures and all pair mismatches" {
     input.v2_fixture = "bad";
     try std.testing.expectError(error.V2FixtureMismatch, verify(a, input));
     input = valid;
+    input.v3_example = "bad";
+    try std.testing.expectError(error.V3FixtureMismatch, verify(a, input));
+    input = valid;
     input.presets_example = "bad";
     try std.testing.expectError(error.PresetsFixtureMismatch, verify(a, input));
 }
@@ -200,6 +248,10 @@ test "schema and example versions are checked independently" {
     input = valid;
     input.v2_example = "{\"schema_version\":3}";
     input.v2_fixture = input.v2_example;
+    try std.testing.expectError(error.SchemaVersionMismatch, verify(std.testing.allocator, input));
+    input = valid;
+    input.v3_example = "{\"schema_version\":4}";
+    input.v3_fixture = input.v3_example;
     try std.testing.expectError(error.SchemaVersionMismatch, verify(std.testing.allocator, input));
     input = valid;
     input.v1_schema = "{}";
@@ -243,6 +295,9 @@ fn writeTestFiles(dir: Io.Dir) !void {
         .{ .path = "docs/schemas/project-v1.schema.json", .content = schema_v1 },
         .{ .path = "docs/schemas/project-v2.schema.json", .content = schema_v2 },
         .{ .path = "shared/fixtures/distribution.template.json", .content = sample_manifest },
+        .{ .path = "docs/examples/EmptyGameV3.proj", .content = sample_v3 },
+        .{ .path = "shared/fixtures/EmptyGameV3.proj", .content = sample_v3 },
+        .{ .path = "docs/schemas/project-v3.schema.json", .content = schema_v3 },
     };
     for (files) |file| try dir.writeFile(io, .{ .sub_path = file.path, .data = file.content });
 }

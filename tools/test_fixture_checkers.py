@@ -24,6 +24,9 @@ PATHS = (
     "docs/schemas/project-v1.schema.json",
     "docs/schemas/project-v2.schema.json",
     "shared/fixtures/distribution.template.json",
+    "docs/examples/EmptyGameV3.proj",
+    "shared/fixtures/EmptyGameV3.proj",
+    "docs/schemas/project-v3.schema.json",
 )
 CHECKER = None
 
@@ -82,6 +85,7 @@ class FixtureCheckers(unittest.TestCase):
             (PATHS[0], PATHS[1], "V1FixtureMismatch"),
             (PATHS[2], PATHS[3], "V2FixtureMismatch"),
             (PATHS[4], PATHS[5], "PresetsFixtureMismatch"),
+            (PATHS[9], PATHS[10], "V3FixtureMismatch"),
         ):
             with self.subTest(name=name):
                 root = self.fresh()
@@ -96,7 +100,7 @@ class FixtureCheckers(unittest.TestCase):
                 self.compare(root, False, False, "FileNotFound", (name,))
 
     def test_invalid_json_in_every_parsed_file(self):
-        for name in (PATHS[1], PATHS[3], PATHS[6], PATHS[7], PATHS[8]):
+        for name in (PATHS[1], PATHS[3], PATHS[6], PATHS[7], PATHS[8], PATHS[11]):
             with self.subTest(name=name):
                 root = self.fresh()
                 if name == PATHS[1]:
@@ -111,6 +115,7 @@ class FixtureCheckers(unittest.TestCase):
         for version, schema_name, example, fixture in (
             (1, PATHS[6], PATHS[0], PATHS[1]),
             (2, PATHS[7], PATHS[2], PATHS[3]),
+            (3, PATHS[11], PATHS[9], PATHS[10]),
         ):
             for change_schema in (False, True):
                 with self.subTest(version=version, schema=change_schema):
@@ -145,6 +150,17 @@ class FixtureCheckers(unittest.TestCase):
                 schema["properties"]["engine"]["properties"]["graphics_backend"]["enum"] = values
                 self.put_json(root, PATHS[7], schema)
                 self.compare(root, False, False, "InvalidContractShape")
+        root = self.fresh()
+        schema = json.loads((root / PATHS[11]).read_text(encoding="utf-8"))
+        schema["properties"]["renderer"]["properties"]["profile"]["enum"] = ["lite", "standard", "advanced"]
+        self.put_json(root, PATHS[11], schema)
+        self.compare(root, False, False, "RendererProfileMismatch", (PATHS[11],))
+        root = self.fresh()
+        project = json.loads((root / PATHS[10]).read_text(encoding="utf-8"))
+        project["renderer"]["profile"] = "future"
+        encoded = json.dumps(project).encode()
+        self.pair(root, PATHS[9], PATHS[10], encoded)
+        self.compare(root, False, False, "RendererProfileMismatch", (PATHS[11], PATHS[10]))
         root = self.fresh()
         self.pair(root, PATHS[4], PATHS[5], b"modified presets")
         self.compare(root, False, False, "PresetsHashMismatch", (PATHS[8], PATHS[5]))

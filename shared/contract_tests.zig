@@ -20,10 +20,33 @@ fn rejects(needle: []const u8, replacement: []const u8, expected: anyerror, poin
 
 test "version is inspected before future fields and never inferred" {
     var d: project.Diagnostic = .{};
-    try std.testing.expectError(error.UnsupportedSchemaVersion, project.parse(a, "{\"schema_version\":3,\"future\":null}", &d));
+    try std.testing.expectError(error.UnsupportedSchemaVersion, project.parse(a, "{\"schema_version\":4,\"future\":null}", &d));
     try std.testing.expectEqualStrings("/schema_version", d.pointer());
     try std.testing.expectError(error.MissingSchemaVersion, project.parse(a, "{}", &d));
     try rejects("\"schema_version\": 1", "\"schema_version\": \"1\"", error.InvalidField, "/schema_version");
+}
+
+test "renderer profiles are mandatory only in v3 and never inferred for legacy schemas" {
+    var d: project.Diagnostic = .{};
+    const v3 = @embedFile("fixtures/EmptyGameV3.proj");
+    const invalid = try std.mem.replaceOwned(u8, a, v3, "\"profile\": \"lite\"", "\"profile\": \"future\"");
+    defer a.free(invalid);
+    try std.testing.expectError(error.InvalidField, project.parse(a, invalid, &d));
+    try std.testing.expectEqualStrings("/renderer/profile", d.pointer());
+
+    const missing = try std.mem.replaceOwned(u8, a, v3, "\"profile\": \"lite\",\n", "");
+    defer a.free(missing);
+    try std.testing.expectError(error.InvalidField, project.parse(a, missing, &d));
+    try std.testing.expectEqualStrings("/renderer/profile", d.pointer());
+
+    const legacy_with_profile = try std.mem.replaceOwned(u8, a, fixture, "\"renderer\": {\n", "\"renderer\": {\n    \"profile\": \"lite\",\n");
+    defer a.free(legacy_with_profile);
+    try std.testing.expectError(error.InvalidField, project.parse(a, legacy_with_profile, &d));
+    try std.testing.expectEqualStrings("/renderer/profile", d.pointer());
+
+    var legacy = try project.parse(a, fixture, &d);
+    defer legacy.deinit();
+    try std.testing.expect(legacy.value.renderer.profile == null);
 }
 
 test "JSON rejects duplicates including escaped equivalent keys" {
