@@ -1,3 +1,5 @@
+> **Compatibilidade:** v1 permanece imutável. Projetos novos do perfil Windows/Linux 3D/Canvas usam [v2](PROJECT_SCHEMA_V2.md); Metal/WebGPU históricos são inspecionáveis, não executáveis.
+
 # Contrato `.proj` v1 — aprovado (item 2)
 
 **Estado:** aprovado pelo usuário em 2026-11-01. ADR-001 e `presets.zon` (item 3) também aprovados. Na etapa documental não houve código; a implementação incremental dos contratos iniciou depois em `shared/`.

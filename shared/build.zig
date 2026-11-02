@@ -10,9 +10,9 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     mod.addIncludePath(b.path("."));
-    mod.addCSourceFiles(.{ .files = &.{"graphics_abi.c"}, .flags = &.{ "-std=c23", "-Wall", "-Wextra", "-Werror" } });
+    mod.addCSourceFiles(.{ .files = &.{ "graphics_abi.c", "platform_ext/process_native.c" }, .flags = &.{ "-std=c23", "-Wall", "-Wextra", "-Werror" } });
     const tests = b.addTest(.{ .root_module = mod });
     b.step("check", "Compile shared tests without execution (cross targets)").dependOn(&tests.step);
     const run = b.addRunArtifact(tests);
-    b.step("test", "Test shared project/preset contracts (no GPU)").dependOn(&run.step);
+    b.step("test", "Test application contracts and bootstrap helpers (no GPU)").dependOn(&run.step);
 }

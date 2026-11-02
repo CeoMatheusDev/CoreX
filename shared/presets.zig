@@ -176,5 +176,5 @@ fn allocationProbe(allocator: std.mem.Allocator) !void {
 }
 
 test "preset parsing cleans every allocation failure" {
-    try std.testing.checkAllAllocationFailures(std.testing.allocator, allocationProbe, .{});
+    try @import("testing_allocator.zig").checkAllFailures(allocationProbe, .{});
 }

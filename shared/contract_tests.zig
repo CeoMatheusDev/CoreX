@@ -20,7 +20,7 @@ fn rejects(needle: []const u8, replacement: []const u8, expected: anyerror, poin
 
 test "version is inspected before future fields and never inferred" {
     var d: project.Diagnostic = .{};
-    try std.testing.expectError(error.UnsupportedSchemaVersion, project.parse(a, "{\"schema_version\":2,\"future\":null}", &d));
+    try std.testing.expectError(error.UnsupportedSchemaVersion, project.parse(a, "{\"schema_version\":3,\"future\":null}", &d));
     try std.testing.expectEqualStrings("/schema_version", d.pointer());
     try std.testing.expectError(error.MissingSchemaVersion, project.parse(a, "{}", &d));
     try rejects("\"schema_version\": 1", "\"schema_version\": \"1\"", error.InvalidField, "/schema_version");

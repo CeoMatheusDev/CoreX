@@ -18,7 +18,21 @@ pub const Error = error{
 };
 const DecodeError = error{ OutOfMemory, InvalidField };
 
-pub const Backend = enum { vulkan, webgpu, d3d12, metal };
+// Legacy tokens remain for v1 inspection only; v2 uses the product's four APIs.
+pub const Backend = enum { vulkan, webgpu, d3d12, metal, d3d11, opengl };
+pub fn backendAllowedInSchema(version: u32, backend: Backend) bool {
+    return switch (version) {
+        1 => switch (backend) {
+            .vulkan, .webgpu, .d3d12, .metal => true,
+            else => false,
+        },
+        2 => switch (backend) {
+            .vulkan, .opengl, .d3d11, .d3d12 => true,
+            else => false,
+        },
+        else => false,
+    };
+}
 pub const CppModule = enum { static, dynamic };
 pub const Project = struct {
     schema_version: u32,
@@ -93,7 +107,7 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8, diagnostic: *Diag
     diagnostic.set("/schema_version");
     if (version != .number_string) return error.InvalidField;
     const v = validation.exactU32(version.number_string) catch return error.InvalidField;
-    if (v != 1) return error.UnsupportedSchemaVersion;
+    if (v != 1 and v != 2) return error.UnsupportedSchemaVersion;
     diagnostic.set("");
     const value = try decode(Project, a, tree, "", diagnostic);
     try validate(value, diagnostic);
@@ -197,7 +211,8 @@ fn pathCheck(path: []const u8, d: *Diagnostic, pointer: []const u8) !void {
 }
 
 pub fn validate(p: Project, d: *Diagnostic) Error!void {
-    try require(p.schema_version == 1, d, "/schema_version");
+    try require(p.schema_version == 1 or p.schema_version == 2, d, "/schema_version");
+    try require(backendAllowedInSchema(p.schema_version, p.engine.graphics_backend), d, "/engine/graphics_backend");
     try require(validation.projectName(p.project.name), d, "/project/name");
     try require(validation.uuidV4(p.project.uuid), d, "/project/uuid");
     try require(validation.semver(p.project.version), d, "/project/version");
@@ -326,5 +341,34 @@ fn allocationProbe(a: std.mem.Allocator) !void {
 }
 
 test "document parsing and serialization release every allocation on failure" {
-    try std.testing.checkAllAllocationFailures(std.testing.allocator, allocationProbe, .{});
+    try @import("testing_allocator.zig").checkAllFailures(allocationProbe, .{});
+}
+
+test "schema v2 backend matrix and legacy v1 round trips" {
+    const a = std.testing.allocator;
+    var d: Diagnostic = .{};
+    var document = try parse(a, @embedFile("fixtures/EmptyGameV2.proj"), &d);
+    defer document.deinit();
+    for ([_]u32{ 1, 2 }) |version| {
+        inline for (std.meta.tags(Backend)) |backend| {
+            document.value.schema_version = version;
+            document.value.engine.graphics_backend = backend;
+            const expected = if (version == 1)
+                (backend == .vulkan or backend == .webgpu or backend == .d3d12 or backend == .metal)
+            else
+                (backend == .vulkan or backend == .opengl or backend == .d3d11 or backend == .d3d12);
+            try std.testing.expectEqual(expected, backendAllowedInSchema(version, backend));
+            if (expected) {
+                const text = try serialize(a, document.value, &d);
+                defer a.free(text);
+                var roundtrip = try parse(a, text, &d);
+                defer roundtrip.deinit();
+                try std.testing.expectEqual(version, roundtrip.value.schema_version);
+                try std.testing.expectEqual(backend, roundtrip.value.engine.graphics_backend);
+            } else {
+                try std.testing.expectError(error.InvalidField, serialize(a, document.value, &d));
+                try std.testing.expectEqualStrings("/engine/graphics_backend", d.pointer());
+            }
+        }
+    }
 }

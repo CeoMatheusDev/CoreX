@@ -1,8 +1,20 @@
 //! Bounded lexical preflight before building an allocated JSON/ZON tree.
 const std = @import("std");
 
+pub const JsonLimits = struct {
+    bytes: usize = 1024 * 1024,
+    string_bytes: usize = 4096,
+    depth: usize = 16,
+    members: usize = 256,
+    collection: usize = 256,
+    allow_nul_strings: bool = false,
+};
 pub fn json(allocator: std.mem.Allocator, source: []const u8) error{ OutOfMemory, LimitExceeded, InvalidJson }!void {
-    if (source.len > 1024 * 1024) return error.LimitExceeded;
+    return jsonWithLimits(allocator, source, .{});
+}
+pub fn jsonWithLimits(allocator: std.mem.Allocator, source: []const u8, config: JsonLimits) error{ OutOfMemory, LimitExceeded, InvalidJson }!void {
+    if (config.depth > 16 or config.depth == 0) return error.LimitExceeded;
+    if (source.len > config.bytes) return error.LimitExceeded;
     if (std.mem.startsWith(u8, source, "\xef\xbb\xbf") or !std.unicode.utf8ValidateSlice(source)) return error.InvalidJson;
     var scanner = std.json.Scanner.initCompleteInput(allocator, source);
     defer scanner.deinit();
@@ -11,7 +23,7 @@ pub fn json(allocator: std.mem.Allocator, source: []const u8) error{ OutOfMemory
     var depth: usize = 0;
     var members: usize = 0;
     while (true) {
-        const token = scanner.nextAllocMax(allocator, .alloc_always, 4096) catch |err| switch (err) {
+        const token = scanner.nextAllocMax(allocator, .alloc_always, config.string_bytes) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.ValueTooLong => return error.LimitExceeded,
             else => return error.InvalidJson,
@@ -25,10 +37,10 @@ pub fn json(allocator: std.mem.Allocator, source: []const u8) error{ OutOfMemory
             else => {},
         };
         if (string) |s| {
-            if (!std.unicode.utf8ValidateSlice(s) or std.mem.indexOfScalar(u8, s, 0) != null) return error.InvalidJson;
+            if (!std.unicode.utf8ValidateSlice(s) or (!config.allow_nul_strings and std.mem.indexOfScalar(u8, s, 0) != null)) return error.InvalidJson;
             if (depth > 0 and frames[depth - 1].object and frames[depth - 1].key) {
                 members += 1;
-                if (members > 256) return error.LimitExceeded;
+                if (members > config.members) return error.LimitExceeded;
                 frames[depth - 1].key = false;
                 continue;
             }
@@ -45,12 +57,12 @@ pub fn json(allocator: std.mem.Allocator, source: []const u8) error{ OutOfMemory
                         frames[depth - 1].key = true;
                     } else {
                         frames[depth - 1].elements += 1;
-                        if (frames[depth - 1].elements > 256) return error.LimitExceeded;
+                        if (frames[depth - 1].elements > config.collection) return error.LimitExceeded;
                     }
                 }
                 switch (token) {
                     .object_begin, .array_begin => {
-                        if (depth == frames.len) return error.LimitExceeded;
+                        if (depth == config.depth) return error.LimitExceeded;
                         frames[depth] = .{ .object = token == .object_begin };
                         depth += 1;
                     },

@@ -1,6 +1,6 @@
 # CoreX — contratos compartilhados de aplicação
 
-**Implementado nesta etapa:** módulo Zig 0.17.0 reutilizável de documentos `.proj` v1, presets e DTO interno Zig↔C23. **Não são ainda os executáveis Editor/Runtime.** Não depende de janela, GPU, Lua ou dos builds legados.
+**Implementado nesta etapa:** módulo Zig 0.17.0 reutilizável de documentos `.proj` v1/v2, presets e DTO interno Zig↔C23. Agora é consumido pelos bootstraps independentes em `editor/` e `runtime/`, que validam documentos e não executam o jogo/UI. Não depende de janela, GPU, Lua ou dos builds legados.
 
 ## Build e testes
 
@@ -25,13 +25,13 @@ cd shared
 python -m ziglang build test --summary all
 ```
 
-A distribuição fixada oferece wheels Linux/macOS. Não foi encontrada wheel Windows para 0.17.0; suporte nativo de CI Windows continua pendente (P16). Não adotar outra versão de Zig silenciosamente.
+O toolchain de build suportado usa wheels Linux; macOS foi removido do produto (ADR-003). Não foi encontrada wheel Windows para 0.17.0; suporte nativo de CI Windows continua pendente (P16). Não adotar outra versão de Zig silenciosamente.
 
 Para invocar o runner diretamente, incluindo C23:
 
 ```sh
 cd shared
-zig test -I . -lc root.zig -cflags -std=c23 -Wall -Wextra -Werror -- graphics_abi.c
+zig test -I . -lc root.zig -cflags -std=c23 -Wall -Wextra -Werror -- graphics_abi.c platform_ext/process_native.c
 ```
 
 Na raiz:
@@ -42,7 +42,7 @@ zig fmt --check shared
 c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror -fsyntax-only -x c++ shared/graphics_abi.h
 ```
 
-O workflow `shared-contracts.yml` configura Debug/ReleaseSafe em Linux/macOS e cross-compilação Windows. Ainda não foi executado no GitHub nesta sessão. Não é a matriz final de CI das duas aplicações.
+O workflow `shared-contracts.yml` configura Debug/ReleaseSafe em Linux e cross-compilação Windows. Resultados confirmados por commit e links de CI estão em `docs/APPLICATION_PROGRESS.md`. Não é a matriz final de CI das duas aplicações.
 
 ## API Zig e ownership
 
@@ -81,16 +81,32 @@ O DTO usa membros de 4 bytes e tem 116 bytes no v1, sem packing. A escolha custa
 
 ## Cobertura e limites atuais
 
-27 testes locais passam em Linux, Debug e ReleaseSafe (ver relatório de progresso para a execução final). Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, erros de versão, exatidão decimal, ownership, limites, 256 mutações determinísticas e falhas de alocação injetadas. Também exercitam a ABI C23 real.
+43 testes compartilhados; resultados por modo em `docs/APPLICATION_PROGRESS.md`. Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, erros de versão, exatidão decimal, ownership, limites, 256 mutações determinísticas e falhas de alocação injetadas. Também exercitam a ABI C23 real.
 
-O teste denominado Editor→Runtime nesta fase usa dois consumidores do mesmo módulo **no mesmo processo de teste**. Integração entre executáveis/processo filho, stdout/stderr JSON lines, snapshots ZyntraUI e GPU real continuam não implementados.
+Os testes Zig Editor→Runtime continuam sendo round-trip em memória. Adicionalmente, `tools/test_bootstrap.py` testa os **dois executáveis em processos reais**, apenas no escopo de validação. São 29 testes de integração locais, incluindo supervisão e JSON lines. Play de jogo, snapshots ZyntraUI e GPU real continuam não implementados.
 
 Limitações explícitas:
 
 - **P14:** NFC completa indisponível: caminhos não ASCII retornam `UnicodePathNormalizationUnavailable` (fail-closed). Metadados/nome de projeto UTF-8 são aceitos. Não é implementação completa do conjunto de caminhos admitido pelo schema.
 - **P14:** caminhos só são validados lexicalmente. Links, caixa real, permissões, existência, contenção no filesystem e segurança contra corrida de substituição exigem `platform_ext`. Resultado de parse não autoriza leitura/escrita/execução de recursos.
-- **P15:** manifesto/hash da distribuição, versão/ABI do core, capacidades gráficas, resolução de recursos, logs, CLI, persistência atômica e binários ainda não foram integrados.
+- **P15 parcial:** manifesto/hash da distribuição, CLI, logs síncronos e bootstraps binários de validação foram integrados. ABI do core, capacidades gráficas, recursos reais, logger concorrente/frame, Play, persistência atômica e UI continuam pendentes.
 - **P04/P05/P06/P07/P09:** builds legados/dependências de plataforma, GPU/reflexão/jobs/VM e API pública continuam com bloqueios registrados.
 - **P16:** execução nativa Windows e CI completa das aplicações não foram obtidas; cross-compilação não substitui essas verificações.
 
 Contratos aprovados: `docs/PROJECT_SCHEMA_V1.md`, `docs/PRESETS_SCHEMA_V1.md`. Estrutura-alvo e tarefas com responsáveis: `docs/APPLICATION_LAYOUT.md` e `docs/ADR-001-editor-runtime.md`.
+
+## Bootstrap e protocolo (segunda fatia)
+
+- `cli.zig`: argumentos estritos compartilhados e modos explícitos.
+- `logging.zig`: encoder fixo de JSON lines e sink síncrono de bootstrap, não logger de frame.
+- `jsonl.zig`: enquadramento incremental, limites e validação do envelope recebido.
+- `distribution.zig`: recursos instalados relativos ao executável; manifesto fixado no build e SHA-256 da tabela.
+- `fingerprint.zig`: identidade dos valores normalizados completos, sem sessão/relógio/CWD.
+- `bootstrap.zig`: orquestração comum para duas entradas separadas, sem core/renderer fictícios.
+- `platform_ext/process.zig` + `process_native.c/.h`: captura simultânea dos pipes, prazo e propriedade/reap do filho imediato. Diferenças POSIX/Windows isoladas. Esse módulo C privado também é compilado com `-std=c23`.
+
+CLI, códigos de saída, exemplos e restrições: `docs/APPLICATION_CLI.md`. Decisões e regressão de cancelamento resolvida: `docs/ADR-002-validation-bootstrap.md`. Não executar programas não confiáveis com `--check-runtime`; não há sandbox ou supervisão de árvores de subprocessos.
+
+## Perfil desktop e schema v2
+
+`scope.zig` centraliza a elegibilidade por SO, distinta de capacidade/implementação GPU. `project.zig` mantém compatibilidade v1 e valida v2 (Vulkan/OpenGL/D3D11/D3D12). `fingerprint.zig` agora usa versão 2 e inclui `desktop-3d-canvas-v1`. Não há modo de cena 2D, Metal/WebGPU executáveis ou suporte de produto macOS. Decisões e matriz: ADR-003; contrato: PROJECT_SCHEMA_V2.md.

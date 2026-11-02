@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "project": {
+    "name": "Empty Game",
+    "uuid": "61fe42aa-7bcc-41b1-ae4a-0baa9e324c10",
+    "version": "0.1.0",
+    "created_at": "2026-11-01T12:00:00Z"
+  },
+  "engine": {
+    "version": "0.1.0",
+    "graphics_backend": "vulkan"
+  },
+  "renderer": {
+    "graphics_preset": "medium",
+    "vsync": true,
+    "initial_resolution": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "scenes": {
+    "root": "scenes",
+    "startup": "scenes/Main.scene"
+  },
+  "scripts": {
+    "cpp_root": "scripts/cpp",
+    "lua_root": "scripts/lua"
+  },
+  "assets": {
+    "root": "assets"
+  },
+  "simulation": {
+    "fixed_tick_hz": 60,
+    "seed": 42
+  }
+}

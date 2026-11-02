@@ -17,6 +17,8 @@
         "build.zig.zon",
         "src",
         "shared",
+        "editor",
+        "runtime",
         "docs",
         "tests",
         "examples",
