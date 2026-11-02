@@ -1,0 +1,8 @@
+.{
+    .name = .corex_tools,
+    .version = "0.1.0",
+    .fingerprint = 0xca8456a0b2a3764b,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{ .shared = .{ .path = "../../shared" } },
+    .paths = .{ "build.zig", "build.zig.zon", "README.md", "check_contract_fixtures.zig", "check_application_targets.zig" },
+}

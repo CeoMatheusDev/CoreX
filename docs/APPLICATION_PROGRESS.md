@@ -4,6 +4,19 @@
 
 ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
 
+## Continuação — verificação de alvos em Zig
+
+- `tools/zig/check_application_targets.zig` verifica os builds reais de Editor/Runtime nos três alvos não suportados, aceita somente compilador absoluto com versão **0.17.0**, status de saída normal não zero e diagnóstico específico. Não executa binários cross-compilados. O build independente em `tools/zig/` também fornece testes e `check` cross.
+- `shared/platform_ext/process.zig` foi extraído em `runCommand` genérico reutilizando o mesmo supervisor bounded dos bootstraps: caminho explícito, argumentos sem shell, cwd por handle, deadline, captura limitada e reap do filho imediato. `runValidation` mantém validação e argumentos anteriores. Não há sandbox nem encerramento de árvores de processos. Seis novos testes cobrem parâmetros, dois pipes/status, timeout com pipes fechados/TERM ignorado, cwd, overflow e falha de alocação.
+- Linux local: tooling **9/9** e Shared **49/49**, ambos Debug/ReleaseSafe; Editor **2/2** e Runtime **16/16** Debug; integração de processos **29/29**. Python e Zig confirmaram as mesmas seis recusas reais. Testes de CLI locais adicionais cobriram caminho Unicode/com espaços, versão errada, sucesso com mensagem indevida e erro sem diagnóstico. Windows x86_64 GNU compilou ferramenta, testes e Shared sem execução nativa. CI remota desta fatia ainda não foi executada.
+- Ambas as ferramentas Python originais permanecem em execução shadow. Python/pip e outros testes continuam necessários; o PR #4 está aberto e seus caminhos/workflow precisarão de reconciliação.
+
+## Continuação — migração incremental do tooling
+
+- `tools/zig/check_contract_fixtures.zig` implementa de forma independente a verificação de igualdade dos exemplos, versões, backends v2 e digest de presets. Lê arquivos em tempo de execução, aceita `--root` e limita arquivos a 4 MiB. Rejeita chaves JSON duplicadas e exige versões canônicas 1/2, mais estrito que o script Python original. Isso não é validação completa dos schemas nem autenticação da distribuição.
+- O verificador Python permanece e o workflow executa ambos (shadow) para evitar perda silenciosa de cobertura. Sete testes Zig incluem arquivos reais em diretório temporário Unicode, corrupção, ausência, tamanho excessivo e falhas de alocação. A comparação local com o script Python passou em nove cenários válidos/inválidos; em JSON com duplicatas, Zig rejeitou e Python aceitou, conforme esperado. Os dois não são equivalentes para todas as entradas.
+- Local Linux: checker Zig **7/7** em Debug e ReleaseSafe; checker compilado para Windows x86_64 GNU e testes compilados sem execução nativa; Shared Debug/ReleaseSafe **43/43** e Runtime Debug **16/16**. A CI atualizada ainda não foi executada remotamente nesta fatia. O PR #4 continua aberto e reorganiza os scripts Python; seus caminhos e o mesmo workflow precisam ser reconciliados na integração. Python/pip ainda são usados pelo pipeline e outras ferramentas; não foi declarada sua remoção.
+
 ## Continuação — input por tick e diagnóstico Zigway
 
 A branch atual partia de antes do PR #3; foi atualizada em fast-forward para a `main` que o incorporou. O trabalho de input descrito na conversa posterior ao PR não estava em Git e foi reconstituído nesta branch. Além disso, `enqueueBatch` agora valida e insere um lote inteiro ou nenhum evento, inclusive diante de capacidade insuficiente, tick passado, fora de ordem ou esgotamento de contador.

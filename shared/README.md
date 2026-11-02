@@ -103,7 +103,7 @@ Contratos aprovados: `docs/PROJECT_SCHEMA_V1.md`, `docs/PRESETS_SCHEMA_V1.md`. E
 - `distribution.zig`: recursos instalados relativos ao executável; manifesto fixado no build e SHA-256 da tabela.
 - `fingerprint.zig`: identidade dos valores normalizados completos, sem sessão/relógio/CWD.
 - `bootstrap.zig`: orquestração comum para duas entradas separadas, sem core/renderer fictícios.
-- `platform_ext/process.zig` + `process_native.c/.h`: captura simultânea dos pipes, prazo e propriedade/reap do filho imediato. Diferenças POSIX/Windows isoladas. Esse módulo C privado também é compilado com `-std=c23`.
+- `platform_ext/process.zig` + `process_native.c/.h`: captura simultânea limitada dos pipes, prazo e propriedade/reap do filho imediato. `runCommand` também atende tooling com executável absoluto, argv e cwd explícitos; não usa shell nem supervisiona descendentes. Diferenças POSIX/Windows isoladas. Esse módulo C privado também é compilado com `-std=c23`.
 
 CLI, códigos de saída, exemplos e restrições: `docs/APPLICATION_CLI.md`. Decisões e regressão de cancelamento resolvida: `docs/ADR-002-validation-bootstrap.md`. Não executar programas não confiáveis com `--check-runtime`; não há sandbox ou supervisão de árvores de subprocessos.
 

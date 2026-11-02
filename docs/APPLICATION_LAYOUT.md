@@ -66,6 +66,7 @@ CoreX/
 ├── tools/
 │   ├── zig-requirements.txt        # [atual] Zig 0.17.0 e hashes das wheels
 │   ├── check_contract_fixtures.py  # [atual] igualdade dos exemplos + digest do manifesto
+│   ├── zig/                       # [atual] ferramentas Zig para fixtures e alvos; migração gradual
 │   ├── check_application_targets.py # [atual] rejeição explícita de alvos fora do produto
 │   ├── ci_capture.py              # [atual] tail limitado de falhas em annotations GitHub
 │   └── test_bootstrap.py           # [atual] contratos entre executáveis e probes adversariais
