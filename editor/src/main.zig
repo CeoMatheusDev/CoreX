@@ -10,4 +10,5 @@ test {
     std.testing.refAllDecls(app);
     _ = @import("workspace.zig");
     _ = @import("project_preflight.zig");
+    _ = @import("project_opening.zig");
 }
