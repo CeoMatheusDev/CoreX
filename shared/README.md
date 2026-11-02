@@ -1,10 +1,12 @@
-# CoreX — contratos compartilhados de aplicação
+# Shared application contracts
 
-**Implementado:** módulo Zig 0.17.0 reutilizável de documentos `.proj` v1/v2/v3, presets, DTO interno Zig↔C23 e identidade de produto CoreX injetada do `VERSION` raiz. Agora é consumido pelos bootstraps independentes em `editor/` e `runtime/`, que validam documentos e não executam o jogo/UI. Não depende de janela, GPU, Lua ou dos builds legados. A versão de produto, SemVer dos pacotes, schema `.proj`, ABI e toolchain permanecem domínios separados.
+`shared/` is the reusable Zig 0.17.0 contract layer for CoreX project documents (`.proj` v1/v2/v3), presets, the private Zig↔C23 graphics-configuration DTO, product identity, and bootstrap protocol. The independent Editor and Runtime bootstraps consume this package to validate documents; it does not depend on a window system, GPU, Lua, or the legacy application build.
 
-## Build e testes
+Product version, package SemVer, project schema version, C ABI version, and toolchain version are distinct domains. Updating one does not implicitly update the others.
 
-Com Zig 0.17.0 instalado:
+## Build and test
+
+With Zig 0.17.0 installed:
 
 ```sh
 cd shared
@@ -13,12 +15,12 @@ zig build test -Doptimize=ReleaseSafe --summary all
 zig build check -Dtarget=x86_64-windows-gnu -j2 --summary all
 ```
 
-`check` compila os testes para outro alvo sem executá-los. **Não equivale a teste nativo Windows.** O primeiro cross-link pode demorar por compilar o CRT.
+`check` compiles for another target without running the result. It is **not** a native Windows test. The first cross-link may take longer while the CRT is compiled.
 
-Sem Zig no PATH, no Linux é possível instalar o mesmo wheel fixado por SHA-256 sem Python:
+On Linux, Zig 0.17.0 can be installed without Python using the repository installer:
 
 ```sh
-# Na raiz; o diretório de destino ainda não deve existir.
+# Run from the repository root; the destination must not already exist.
 mkdir -p .cache
 sh tools/install_zig.sh "$PWD/.cache/zig-0.17.0"
 ZIG_EXE="$PWD/.cache/zig-0.17.0/ziglang/zig"
@@ -26,91 +28,93 @@ cd shared
 "$ZIG_EXE" build test --summary all
 ```
 
-O instalador requer `curl`, `unzip`, `sha256sum` e utilitários POSIX; também aceita um wheel local já baixado. Ele não é necessário se Zig 0.17.0 já estiver disponível.
+The installer requires `curl`, `unzip`, `sha256sum`, and POSIX utilities; it can also use a locally downloaded wheel. Linux wheels are the supported installation path. macOS is outside the product scope (ADR-003); a native Windows wheel was not available for Zig 0.17.0 when this was documented. Do not silently substitute another Zig version.
 
-O toolchain de build suportado usa wheels Linux; macOS foi removido do produto (ADR-003). Não foi encontrada wheel Windows para 0.17.0; suporte nativo de CI Windows continua pendente (P16). Não adotar outra versão de Zig silenciosamente.
-
-Para invocar o runner diretamente, incluindo C23:
+To invoke the Zig test runner directly, including the C23 sources:
 
 ```sh
 cd shared
-zig test -I . -lc root.zig -cflags -std=c23 -Wall -Wextra -Werror -- graphics_abi.c platform_ext/process_native.c
+zig test -I . -lc root.zig \
+  -cflags -std=c23 -Wall -Wextra -Werror -- \
+  graphics_abi.c platform_ext/process_native.c
 ```
 
-Na raiz:
+From the repository root, additional checks are:
 
 ```sh
 (cd tools/zig && zig build validate-fixtures)
 zig fmt --check shared
-c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror -fsyntax-only -x c++ shared/graphics_abi.h
+c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror \
+  -fsyntax-only -x c++ shared/graphics_abi.h
 ```
 
-O workflow `shared-contracts.yml` configura Debug/ReleaseSafe em Linux e cross-compilação Windows. Resultados confirmados por commit e links de CI estão em `docs/APPLICATION_PROGRESS.md`. Não é a matriz final de CI das duas aplicações.
+The `shared-contracts.yml` workflow tests Debug and ReleaseSafe on Linux and cross-compiles Windows. Results tied to commits and CI links are recorded in [`../docs/APPLICATION_PROGRESS.md`](../docs/APPLICATION_PROGRESS.md); this is not the final CI matrix for both applications.
 
-## API Zig e ownership
+## Zig API and ownership
 
 ```zig
 const app = @import("corex_app");
+
 var diagnostic: app.project.Diagnostic = .{};
 var document = try app.project.parse(allocator, project_bytes, &diagnostic);
 defer document.deinit();
+
 var table = try app.presets.parse(allocator, table_bytes);
 defer table.deinit();
+
 const resolved = try table.value.resolve(
     document.value.renderer.graphics_preset,
     document.value.renderer.overrides,
 );
 const dto = try app.graphics_abi.translate(resolved);
-_ = dto; // entregue ao adaptador do core quando sua interface real estiver disponível
+_ = dto; // consumed by a future core adapter; it does not create a renderer
 ```
 
-O pacote exporta `corex_app` via `build.zig`. Consumidores devem usar o módulo do build, que inclui o fonte C23 e libc. A camada C é compilada com `-std=c23 -Wall -Wextra -Werror`.
+`build.zig` exports the `corex_app` module. Consume it through the build graph so the C23 sources and libc linkage are included. C sources compile with `-std=c23 -Wall -Wextra -Werror`.
 
-- `project.parse`: preflight limitado; parsing estrito com duplicatas recusadas; versão antes do corpo; conversão tipada sem coerção de strings/números; metadados, caminhos lexicais e dependências de campos.
-- `Document`: arena própria; strings são independentes dos bytes de entrada; válido até `deinit`. Não copiar para depois destruir duas vezes; não guardar referências após destruir.
-- `project.serialize`: aloca bytes canônicos com dois espaços, LF, newline final e omissão de opcionais equivalentes; caller libera com o mesmo allocator. Revalida documento. **Não grava em disco nem oferece backup/replace atômico.**
-- `Diagnostic.pointer()`: JSON Pointer RFC6901 em buffer próprio limitado, preservado após erro. Erros estruturais/semânticos apontam para o campo; sintaxe/duplicatas ainda reportam categoria na raiz, sem localização de byte. O chamador adicionará arquivo e mensagem humana no logger.
-- `presets.parse`: valida perfil restrito, envelope, todos os presets completos e invariantes. A arena contém strings e diagnóstico temporário do parser ZON.
-- `Table.resolve`: lookup por nome no módulo de configuração, merge por presença e validação da configuração concreta. Não há lookup de qualidade no renderer.
-- `graphics_abi.translate`: valida e traduz cada campo para DTO C explícito; flags e enums não atravessam como tipos internos Zig.
+### Documents, presets, and graphics configuration
 
-Os parsers alocam na inicialização/documento, não no frame. Resolução e tradução de configuração não alocam. Isso **não comprova** ausência de alocações nos subsistemas core/Lua/GPU ainda não integrados.
+- `project.parse` performs a bounded preflight and strict typed parsing. It rejects duplicate keys, validates the version before the body, does not coerce strings/numbers, and checks metadata, lexical paths, and field dependencies.
+- `Document` owns an arena. Its strings do not borrow the input byte buffer and remain valid until `deinit`. Do not copy the owning value and deinitialize both copies, or retain references after deinitialization.
+- `project.serialize` allocates canonical bytes (two-space indentation, LF, final newline, optional equivalent fields omitted) and revalidates the document. The caller frees the returned slice with the same allocator. It does **not** write to disk or provide backup/atomic replacement.
+- `Diagnostic.pointer()` formats a bounded RFC 6901 JSON Pointer in its own buffer and survives the parse error. Structural/semantic errors identify a field; syntax and duplicate-key errors currently report the root category without byte offsets. The caller adds the file path and human-readable message to its logger.
+- `presets.parse` validates the restricted profile, envelope, complete presets, and invariants. Its arena owns strings and temporary parser diagnostics.
+- `Table.resolve` performs name lookup in the configuration module, merges by field presence, and validates the resulting concrete configuration. Renderer quality lookup does not occur here.
+- `graphics_abi.translate` validates and translates each field into an explicit C DTO. Flags and enums do not cross the ABI as internal Zig types.
 
-### DTO C23 privado
+Parsing may allocate while constructing a document; resolution and DTO translation do not allocate. This does **not** establish allocation behavior for core, Lua, or GPU subsystems that are not integrated here.
 
-`graphics_abi.h` é contrato **interno das aplicações**, não substitui o futuro `engine_api.h` único da API pública do core. A validação C não cria renderer nem dispositivo. Usa tamanho/versão, larguras fixas, flags 0/1, enumeração numérica explícita, status `i32` e nenhuma retenção de ponteiro/alocação.
+### Private C23 DTO
 
-O DTO usa membros de 4 bytes e tem 116 bytes no v1, sem packing. A escolha custa alguns bytes na inicialização, mas evita structs packed e flags dependentes de linguagem. `static_assert` em C e testes Zig verificam todos os offsets, alinhamento natural e tamanho; os tipos Zig internos nunca são passados diretamente para C. A duplicação de checks em C é defesa da fronteira, não nova tabela de presets.
+`graphics_abi.h` is an **internal application contract**. It is not the future public `engine_api.h` for the CoreX engine and does not create a renderer or graphics device. It uses a size/version header, fixed-width fields, 0/1 flags, explicit numeric enums, `i32` status, and no retained pointers or allocations.
 
-## Cobertura e limites atuais
+The v1 DTO is 116 bytes with naturally aligned four-byte members and no packing. This costs a few bytes at initialization but avoids packed structs and language-dependent flags. C `static_assert`s and Zig tests verify offsets, natural alignment, and size; internal Zig types are never passed directly to C. Duplicated validation at the C boundary is defensive checking, not a second preset table.
 
-56 testes compartilhados em Linux após a adoção do versionamento. Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, exatidão decimal, ownership, limites, 256 mutações determinísticas, falhas de alocação injetadas, identidade/compatibilidade do manifesto e parser/comparador/transições da versão de produto. Também exercitam a ABI C23 real. Resultados por modo estão em `docs/APPLICATION_PROGRESS.md`.
+## Bootstrap and process protocol
 
-Os testes Zig Editor→Runtime continuam sendo round-trip em memória. Adicionalmente, `tools/test_bootstrap.py` testa os **dois executáveis em processos reais**, apenas no escopo de validação. São 32 testes de integração locais após a auditoria de compatibilidade/fingerprint, incluindo identidade de produto, supervisão e JSON lines. Play de jogo, snapshots ZyntraUI e GPU real continuam não implementados.
+The package also provides the shared startup and validation contracts:
 
-Limitações explícitas:
+- `cli.zig`: strict shared argument parsing and explicit modes.
+- `logging.zig`: fixed JSON Lines encoder and synchronous bootstrap sink; not a frame-time logger.
+- `jsonl.zig`: incremental framing, bounds, and validation of received envelopes.
+- `product_version.zig` and `engine_identity.zig`: typed product-version grammar and identity compiled from the root `VERSION`. `compatibility_policy.zig` is the trusted allow-list and currently starts empty; the manifest declaration is not authorization.
+- `distribution.zig`: generated manifest, Editor/Runtime identity comparison, exact-or-allow-listed project compatibility, and preset-table SHA-256.
+- `fingerprint.zig`: identity for the complete normalized configuration, excluding session/time/CWD. Fingerprint v4 distinguishes product/platform profile from requested Renderer and includes the expanded manifest.
+- `bootstrap.zig`: orchestration shared by two independent executable entry points; it does not supply a fake core or renderer.
+- `platform_ext/process.zig` and `process_native.c/.h`: bounded concurrent pipe capture, timeout, and ownership/reaping of the immediate child. `runCommand` supports tooling with explicit executable, argv, and CWD; it does not use a shell or supervise descendants. POSIX/Windows differences are isolated. The C module also compiles as C23.
 
-- **P14:** NFC completa indisponível: caminhos não ASCII retornam `UnicodePathNormalizationUnavailable` (fail-closed). Metadados/nome de projeto UTF-8 são aceitos. Não é implementação completa do conjunto de caminhos admitido pelo schema.
-- **P14:** caminhos só são validados lexicalmente. Links, caixa real, permissões, existência, contenção no filesystem e segurança contra corrida de substituição exigem `platform_ext`. Resultado de parse não autoriza leitura/escrita/execução de recursos.
-- **P15 parcial:** manifesto/hash da distribuição, CLI, logs síncronos e bootstraps binários de validação foram integrados. ABI do core, capacidades gráficas, recursos reais, logger concorrente/frame, Play, persistência atômica e UI continuam pendentes.
-- **P04/P05/P06/P07/P09:** builds legados/dependências de plataforma, GPU/reflexão/jobs/VM e API pública continuam com bloqueios registrados.
-- **P16:** execução nativa Windows e CI completa das aplicações não foram obtidas; cross-compilação não substitui essas verificações.
+Do not run untrusted programs with `--check-runtime`: the process helper is not a sandbox and does not supervise process trees. See [`../docs/APPLICATION_CLI.md`](../docs/APPLICATION_CLI.md) for CLI syntax, exit codes, examples, and limits; see [`../docs/ADR-002-validation-bootstrap.md`](../docs/ADR-002-validation-bootstrap.md) for design decisions and the resolved cancellation regression.
 
-Contratos aprovados: `docs/PROJECT_SCHEMA_V1.md`, `docs/PRESETS_SCHEMA_V1.md`. Estrutura-alvo e tarefas com responsáveis: `docs/APPLICATION_LAYOUT.md` e `docs/ADR-001-editor-runtime.md`.
+## Coverage and known limits
 
-## Bootstrap e protocolo (segunda fatia)
+Tests cover project/preset parsing, memory round-trips for Editor/Runtime roles, invalid fields, escaped duplicate keys, decimal exactness, ownership, bounds, deterministic mutations, injected allocation failures, product identity and compatibility, manifest consistency, CLI/version transitions, and the real C23 ABI. The Editor/Runtime Zig tests include in-memory round-trips. In addition, `tools/test_bootstrap.py` exercises both built executables as separate processes during validation, including identity, process supervision, and JSON Lines. That process test currently uses Python.
 
-- `cli.zig`: argumentos estritos compartilhados e modos explícitos.
-- `logging.zig`: encoder fixo de JSON lines e sink síncrono de bootstrap, não logger de frame.
-- `jsonl.zig`: enquadramento incremental, limites e validação do envelope recebido.
-- `product_version.zig` / `engine_identity.zig`: gramática tipada do produto e identidade compilada a partir do `VERSION` raiz. `compatibility_policy.zig` mantém a política confiável (allow-list vazia), separada da declaração não confiável no manifesto.
-- `distribution.zig`: manifesto gerado no build, compatibilidade Editor/Runtime por identidade exata ou allow-list e SHA-256 da tabela.
-- `fingerprint.zig`: identidade dos valores normalizados completos, sem sessão/relógio/CWD; fingerprint v4 distingue perfil de produto/plataforma e Renderer solicitado, além do manifesto ampliado.
-- `bootstrap.zig`: orquestração comum para duas entradas separadas, sem core/renderer fictícios.
-- `platform_ext/process.zig` + `process_native.c/.h`: captura simultânea limitada dos pipes, prazo e propriedade/reap do filho imediato. `runCommand` também atende tooling com executável absoluto, argv e cwd explícitos; não usa shell nem supervisiona descendentes. Diferenças POSIX/Windows isoladas. Esse módulo C privado também é compilado com `-std=c23`.
+Important limitations:
 
-CLI, códigos de saída, exemplos e restrições: `docs/APPLICATION_CLI.md`. Decisões e regressão de cancelamento resolvida: `docs/ADR-002-validation-bootstrap.md`. Não executar programas não confiáveis com `--check-runtime`; não há sandbox ou supervisão de árvores de subprocessos.
+- **P14 — Unicode paths:** complete NFC normalization is unavailable. Non-ASCII filesystem paths fail closed with `UnicodePathNormalizationUnavailable`; UTF-8 project metadata and names are accepted. This is not complete support for all schema-allowed paths.
+- **P14 — filesystem safety:** project paths are validated lexically only. Symlinks, actual case, permissions, existence, filesystem containment, and race-safe replacement require `platform_ext`. A parsed document does not authorize resource reads, writes, or execution.
+- **P15 — partial:** distribution manifest/hash, CLI, synchronous logs, and validation bootstraps are integrated. The public Core ABI, real graphics capabilities/resources, frame-time/concurrent logging, Play, atomic persistence, and UI remain pending.
+- **P04/P05/P06/P07/P09:** legacy builds/dependencies, GPU/reflection/jobs/VM, and the public engine API have remaining blockers recorded in the project docs.
+- **P16:** native Windows execution and complete Windows application CI remain pending. Cross-compilation is not a substitute.
 
-## Perfil desktop e schema v2
-
-`scope.zig` centraliza a elegibilidade por SO, distinta de capacidade/implementação GPU. `project.zig` preserva v1/v2 e aceita v3, que requer `renderer.profile` explícito (`advanced|standard|lite`); projetos legados não recebem seleção automática. `fingerprint.zig` usa versão 4 e inclui separadamente `desktop-3d-canvas-v1` e o profile solicitado, mais manifesto validado. Isso não declara Renderer funcional. Não há modo de cena 2D, Metal/WebGPU executáveis ou suporte de produto macOS. Decisões e matriz: ADR-003 e [ADR-004](../docs/ADR-004-vulkan-surface-integration.md); contrato: [PROJECT_SCHEMA_V3.md](../docs/PROJECT_SCHEMA_V3.md).
+Approved contracts: [`../docs/PROJECT_SCHEMA_V1.md`](../docs/PROJECT_SCHEMA_V1.md), [`../docs/PRESETS_SCHEMA_V1.md`](../docs/PRESETS_SCHEMA_V1.md), and [ADR-003 desktop scope](../docs/ADR-003-desktop-3d-canvas.md). The v3 renderer-profile contract is in [`../docs/PROJECT_SCHEMA_V3.md`](../docs/PROJECT_SCHEMA_V3.md).

@@ -33,14 +33,15 @@ pub fn build(b: *std.Build) void {
 
         const format = b.addRunFile(.zig_exe);
         format.addArgs(&.{
-            "fmt",                                   "--check",
-            "build.zig",                             "src/legacy_tests.zig",
-            "src/zigway_input_tests.zig",            "src/jobs/job_system.zig",
-            "src/events/event.zig",                  "src/main.zig",
-            "src/graphics/renderer/render.zig",      "tests/events/test_basics.zig",
-            "tests/integration/engine_pipeline.zig", "shared",
-            "editor",                                "runtime",
-            "tools/zig",
+            "fmt",                          "--check",
+            "build.zig",                    "src/legacy_tests.zig",
+            "src/zigway_input_tests.zig",   "src/platform/zigway.zig",
+            "src/window/zigway.zig",        "tests/test_zigway.zig",
+            "src/jobs/job_system.zig",      "src/events/event.zig",
+            "src/main.zig",                 "src/graphics/renderer/render.zig",
+            "tests/events/test_basics.zig", "tests/integration/engine_pipeline.zig",
+            "shared",                       "editor",
+            "runtime",                      "tools/zig",
         });
         format.setCwd(b.path("."));
         format.has_side_effects = true;
@@ -101,6 +102,7 @@ pub fn build(b: *std.Build) void {
     test_module.addImport("zigway", zigway_dep.module("zigway"));
     test_module.addImport("zyntra_ui", zyntra_dep.module("zyntra_ui"));
     test_module.addOptions("build_options", identity_options);
+
     const unit_tests = b.addTest(.{
         .root_module = test_module,
     });
@@ -110,4 +112,29 @@ pub fn build(b: *std.Build) void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    const corex_platform_module = b.createModule(.{
+        .root_source_file = b.path("src/platform/zigway.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    corex_platform_module.addImport("zigway", zigway_dep.module("zigway"));
+    const corex_window_module = b.createModule(.{
+        .root_source_file = b.path("src/window/zigway.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    corex_window_module.addImport("corex_platform", corex_platform_module);
+    corex_window_module.addImport("zigway", zigway_dep.module("zigway"));
+    const zigway_adapter_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/test_zigway.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    zigway_adapter_test_module.addImport("corex_platform", corex_platform_module);
+    zigway_adapter_test_module.addImport("corex_window", corex_window_module);
+    zigway_adapter_test_module.addImport("zigway", zigway_dep.module("zigway"));
+    const zigway_adapter_tests = b.addTest(.{ .root_module = zigway_adapter_test_module });
+    const run_zigway_adapter_tests = b.addRunArtifact(zigway_adapter_tests);
+    test_step.dependOn(&run_zigway_adapter_tests.step);
 }

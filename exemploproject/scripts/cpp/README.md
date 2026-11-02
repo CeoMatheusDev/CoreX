@@ -1,3 +1,3 @@
-# Scripts C++
+# C++ scripts
 
-Pasta reservada aos scripts C++ do exemplo; a API e o carregamento de scripts ainda não estão disponíveis.
+Reserved for C++ scripts in the example project. CoreX does not yet define a C++ scripting API or load C++ scripts from this directory.

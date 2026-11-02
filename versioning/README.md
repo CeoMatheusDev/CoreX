@@ -1,10 +1,10 @@
-# CoreX versioning tooling
+# CoreX versioning CLI
 
-The product release format and policy are normative in [`../VERSIONING.md`](../VERSIONING.md). Root `VERSION` is the only product-version source. Do not edit package `.version` fields to mirror its channel suffix.
+The release format and transition policy are defined in [`../VERSIONING.md`](../VERSIONING.md). The repository-root `VERSION` file is the single source of the CoreX product version. Package versions are separate: do not edit package `.version` fields to mirror the product channel or revision.
 
-## Build the native Zig CLI
+## Build
 
-With the repository-pinned Zig 0.17.0:
+Use Zig 0.17.0 from the repository root:
 
 ```sh
 cd tools/zig
@@ -13,7 +13,7 @@ zig build test
 cd ../..
 ```
 
-The executable is `tools/zig/zig-out/bin/corex-version` (Windows builds use `.exe`). Run commands from the repository root so the only writable target is `./VERSION`:
+The executable is `tools/zig/zig-out/bin/corex-version` (`.exe` on Windows). Run it from the repository root so `VERSION` is the only file it can update:
 
 ```sh
 tools/zig/zig-out/bin/corex-version version
@@ -23,14 +23,20 @@ tools/zig/zig-out/bin/corex-version bump beta --dry-run
 tools/zig/zig-out/bin/corex-version release check
 ```
 
-`bump ACTION` applies the transition and atomically replaces only `VERSION`; omit `--dry-run` only when the displayed transition is intended. Actions are `alpha`, `beta`, `final`, `patch-release`, `patch`, `minor`, and `major`. Invalid transitions and overflow fail without writing. The utility never invokes Git, creates tags, commits, releases, or assets.
+## Commands and safety
 
-## Binary identity
+`bump ACTION` applies a valid version transition and atomically replaces only `VERSION`. Review the proposed transition first; omit `--dry-run` only when it is intended. Supported actions are `alpha`, `beta`, `final`, `patch-release`, `patch`, `minor`, and `major`. Invalid transitions and numeric overflow fail without writing.
 
-The root build and shared application build read the same root `VERSION`. `CoreXEditor --version` and `CoreXRuntime --version` emit the compiled product identity and its schema-preserving project-requirement token as JSON lines. `corex_app.engine_identity` exposes the typed identity to Zig code. The CLI `version` command reads the current working tree's `VERSION`; it is distinct from an already compiled binary's embedded version.
+The CLI never invokes Git or creates tags, commits, GitHub releases, or release assets. It validates and edits version metadata only.
 
-## Manifest compatibility
+## Compiled identity and distribution manifest
 
-`distribution.json` is generated at build time from `VERSION` plus `shared/fixtures/distribution.template.json`. The production allow-list authority is `shared/compatibility_policy.zig`, compiled into the application; it starts empty. The template's `compatible_project_engine_versions` is only a declaration, which must match the compiled policy exactly, and the classifier never reads it for authorization. Editing the source policy is a compatibility decision requiring validation/tests; changing the manifest or recalculating SHA-256/fingerprints cannot authorize a different project version. The `.proj` schemas and package manifests remain unchanged.
+The root build and the shared application build read the same `VERSION`. `CoreXEditor --version` and `CoreXRuntime --version` emit the identity compiled into each executable, together with the schema-preserving project-requirement token, as JSON Lines. `corex_app.engine_identity` exposes the typed identity to Zig consumers. By contrast, the CLI `version` command reads the current working tree; it does not report an already-built executable's embedded identity.
 
-The manifest format, compatibility status model, support policy, and validation matrix are documented in `../VERSIONING.md`. Linux build, reproducibility, and pending native-Windows procedures are in [`../docs/VERSIONING_VALIDATION.md`](../docs/VERSIONING_VALIDATION.md). Do not claim native Windows runtime validation from a Windows cross-build.
+`distribution.json` is generated at build time from `VERSION` and `shared/fixtures/distribution.template.json`. Runtime compatibility authorization comes from the compiled allow-list in `shared/compatibility_policy.zig`; that list currently starts empty. The template is a declaration and must match the compiled policy, but it is not an authorization source. Changing the policy is a compatibility decision and requires tests and validation. Updating a manifest, hash, or fingerprint alone cannot authorize a different project version.
+
+## Further documentation
+
+- Release grammar and transition matrix: [`../VERSIONING.md`](../VERSIONING.md)
+- Linux reproducibility and native-Windows validation status: [`../docs/VERSIONING_VALIDATION.md`](../docs/VERSIONING_VALIDATION.md)
+- Application bootstrap and CLI contracts: [`../docs/APPLICATION_CLI.md`](../docs/APPLICATION_CLI.md)

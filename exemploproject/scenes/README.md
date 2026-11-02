@@ -1,3 +1,3 @@
-# Cenas
+# Example scenes
 
-O documento aponta para `Main.scene`. O formato e o carregador de cenas ainda não estão implementados; nenhum arquivo fictício é apresentado como cena válida.
+`Example.proj` refers to `Main.scene` as its startup scene. The scene format, a valid scene document, and the scene loader have not been implemented. This directory intentionally contains no placeholder presented as a functional scene.
