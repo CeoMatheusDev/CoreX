@@ -37,3 +37,15 @@ O Runtime nunca grava `.proj`. Códigos de saída, opções e protocolo: [APPLIC
 - `interpolationAlpha` retorna `null` enquanto há ticks atrasados; quando não há, retorna a fração entre 0 (inclusive) e 1 (exclusive). Nenhum estado anterior/atual é mantido aqui.
 
 Sem descarte automático de backlog. Pausa/retomada, relógio e tratamento de deltas, política de recuperação de falhas, medição/log de atraso, input ordenado por tick, jobs, replay e integração ao core ainda precisam ser definidos e testados no Runtime real. Esses testes aritméticos não demonstram determinismo de gameplay nem autorizam emitir `runtime.ready`.
+
+## Buffer isolado de input por tick
+
+`src/tick_input.zig` contém `Buffer(T)`, infraestrutura genérica para o futuro loop; **não** é adaptador Zigway nem formato persistente de replay. Usa armazenamento exclusivo fornecido pelo chamador, sem alocação própria. Valores são copiados superficialmente: o chamador é responsável pela validade de quaisquer referências em `T`; ponteiros/handles não constituem registro determinístico persistente.
+
+`enqueue` e `enqueueBatch` aceitam entradas em ordem não decrescente de tick, preservando a ordem original dentro de cada tick. O lote é integralmente validado antes de copiar: capacidade insuficiente, tick passado, fora de ordem ou sem possibilidade de confirmação causa erro **sem inserção parcial**. A entrada do lote não pode compartilhar o armazenamento do buffer; a capacidade é verificada antes dos valores. Tick `maxInt(u64)` é recusado, pois o contador não pode avançar após ele.
+
+`beginTick` só abre o próximo tick, inclusive vazio, e verifica overflow antes do trabalho. A fatia emprestada é válida até `commitTick` ou `abortTick`; não altere o armazenamento diretamente. `commitTick` remove o lote e avança; `abortTick` o mantém. O buffer não é thread-safe. Sua compactação custa O(backlog); o chamador define capacidade e tratamento de backpressure.
+
+Um teste combina o buffer com `Scheduler.runDue` e falha simulada antes de efeitos externos. Na integração futura, a confirmação do buffer deve ser a **última operação infalível do callback**: falhas posteriores poderiam avançá-lo sem confirmar o scheduler. Abort não reverte efeitos de gameplay; retry só é seguro com transação ou ausência de efeitos parciais. Atribuição de eventos Zigway a ticks, serialização, replay, relógio e gameplay continuam pendentes.
+
+**Bloqueio observado no Zigway v0.1.0-alpha.4 fixado:** no backend null com capacidade 1, `key_down` seguido de `key_up` substitui o primeiro evento, mas `droppedEvents()` permanece zero. Esse contador não detecta todas as perdas; não se deve usá-lo para garantir captura sem perdas. O teste reproduzível está em `src/zigway_input_tests.zig` no build legado. Não testa janela nativa nem corrige o Zigway upstream.
