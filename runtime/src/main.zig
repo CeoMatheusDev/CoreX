@@ -9,4 +9,5 @@ pub fn main(init: std.process.Init) void {
 test {
     std.testing.refAllDecls(app);
     _ = @import("timing.zig");
+    _ = @import("tick_input.zig");
 }

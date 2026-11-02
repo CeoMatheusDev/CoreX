@@ -7,6 +7,7 @@ const Renderer = @import("graphics/renderer/render.zig").Renderer;
 
 test {
     _ = @import("events/event.zig");
+    _ = @import("zigway_input_tests.zig");
 }
 
 test "legacy engine lifecycle toggles running" {
