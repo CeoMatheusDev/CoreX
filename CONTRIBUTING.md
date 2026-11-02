@@ -24,7 +24,7 @@ Toolchain de referência: Zig 0.17.0. Python 3 é necessário para os scripts de
 
 Antes de submeter, execute os testes relevantes:
 
-\`\`\`sh
+```sh
 # Contratos compartilhados
 cd shared
 zig build test --summary all
@@ -46,15 +46,15 @@ cd ..
 # Fixtures e integração Editor -> Runtime
 python tools/check_contract_fixtures.py
 python tools/test_bootstrap.py
-\`\`\`
+```
 
 O teste de integração requer que Editor e Runtime tenham sido compilados. Para mudanças no core legado, consulte os comandos e requisitos descritos no README; o build legado tem dependências próprias.
 
 Execute também o formatador nos arquivos Zig alterados:
 
-\`\`\`sh
+```sh
 zig fmt --check caminho/do/arquivo.zig
-\`\`\`
+```
 
 Se um comando não puder ser executado no seu ambiente, informe isso explicitamente. Cross-compilação não equivale a execução nativa na plataforma de destino.
 
@@ -96,10 +96,10 @@ Se um comando não puder ser executado no seu ambiente, informe isso explicitame
 
 Use mensagens concisas e imperativas, preferencialmente no formato Conventional Commits:
 
-- \`feat(renderer): add device capability query\`
-- \`fix(shared): reject duplicate schema keys\`
-- \`docs: clarify runtime validation scope\`
-- \`test(ecs): cover entity generation overflow\`
+- `feat(renderer): add device capability query`
+- `fix(shared): reject duplicate schema keys`
+- `docs: clarify runtime validation scope`
+- `test(ecs): cover entity generation overflow`
 
 Um pull request deve conter:
 
