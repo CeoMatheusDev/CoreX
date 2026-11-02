@@ -91,7 +91,7 @@ fn verify(a: Allocator, input: Inputs) !void {
     checkBackends(a, input.v2_schema) catch |err|
         return contextualError(err, "v2 backends: docs/schemas/project-v2.schema.json");
     checkHash(a, input.manifest, input.presets_fixture) catch |err|
-        return contextualError(err, "presets hash: shared/fixtures/distribution.json and shared/fixtures/presets.zon");
+        return contextualError(err, "presets hash: shared/fixtures/distribution.template.json and shared/fixtures/presets.zon");
 }
 
 fn readFile(a: Allocator, io: Io, root: Io.Dir, path: []const u8) ![]u8 {
@@ -125,7 +125,7 @@ fn checkRoot(a: Allocator, io: Io, root: Io.Dir) !void {
         .presets_fixture = try readFile(mem, io, root, "shared/fixtures/presets.zon"),
         .v1_schema = try readFile(mem, io, root, "docs/schemas/project-v1.schema.json"),
         .v2_schema = try readFile(mem, io, root, "docs/schemas/project-v2.schema.json"),
-        .manifest = try readFile(mem, io, root, "shared/fixtures/distribution.json"),
+        .manifest = try readFile(mem, io, root, "shared/fixtures/distribution.template.json"),
     };
     try verify(mem, input);
 }
@@ -242,7 +242,7 @@ fn writeTestFiles(dir: Io.Dir) !void {
         .{ .path = "shared/fixtures/presets.zon", .content = sample_presets },
         .{ .path = "docs/schemas/project-v1.schema.json", .content = schema_v1 },
         .{ .path = "docs/schemas/project-v2.schema.json", .content = schema_v2 },
-        .{ .path = "shared/fixtures/distribution.json", .content = sample_manifest },
+        .{ .path = "shared/fixtures/distribution.template.json", .content = sample_manifest },
     };
     for (files) |file| try dir.writeFile(io, .{ .sub_path = file.path, .data = file.content });
 }

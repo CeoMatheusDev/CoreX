@@ -43,6 +43,18 @@ pub fn build(b: *std.Build) void {
     const extractor_exe = b.addExecutable(.{ .name = "corex-extract-legacy", .root_module = extractor_module });
     b.installArtifact(extractor_exe);
     const extractor_tests = b.addTest(.{ .root_module = extractor_module });
+    const versioning_module = b.createModule(.{ .root_source_file = b.path("versioning.zig"), .target = target, .optimize = optimize });
+    versioning_module.addImport("corex_app", shared.module("corex_app"));
+    const versioning_exe = b.addExecutable(.{ .name = "corex-version", .root_module = versioning_module });
+    b.installArtifact(versioning_exe);
+    const versioning_tests = b.addTest(.{ .root_module = versioning_module });
+    const versioning_cli_options = b.addOptions();
+    versioning_cli_options.addOptionPath("version_tool", versioning_exe.getEmittedBin());
+    versioning_cli_options.addOption([]const u8, "repository_root", repository_root);
+    const versioning_cli_module = b.createModule(.{ .root_source_file = b.path("test_versioning_cli.zig"), .target = target, .optimize = optimize });
+    versioning_cli_module.addOptions("versioning_cli_options", versioning_cli_options);
+    versioning_cli_module.addImport("corex_app", shared.module("corex_app"));
+    const versioning_cli_tests = b.addTest(.{ .root_module = versioning_cli_module });
     const install_extractor = b.step("install-extractor", "Install only the pinned legacy archive extractor");
     install_extractor.dependOn(&b.addInstallArtifact(extractor_exe, .{}).step);
     const run_tests = b.step("test", "Run tooling unit and black-box tests");
@@ -71,6 +83,11 @@ pub fn build(b: *std.Build) void {
         capture_cli_step.dependOn(&run_capture_cli.step);
     }
     run_tests.dependOn(&b.addRunArtifact(extractor_tests).step);
+    run_tests.dependOn(&b.addRunArtifact(versioning_tests).step);
+    const run_versioning_cli_tests = b.addRunArtifact(versioning_cli_tests);
+    run_versioning_cli_tests.setCwd(b.path("."));
+    run_versioning_cli_tests.has_side_effects = true;
+    run_tests.dependOn(&run_versioning_cli_tests.step);
     // Runtime validation executes host binaries and rejects custom targets.
     // The existing `check` remains compile-only for cross-target builds.
     const host = b.graph.host;
@@ -133,4 +150,7 @@ pub fn build(b: *std.Build) void {
     check.dependOn(&capture_cli_tests.step);
     check.dependOn(&extractor_exe.step);
     check.dependOn(&extractor_tests.step);
+    check.dependOn(&versioning_exe.step);
+    check.dependOn(&versioning_tests.step);
+    check.dependOn(&versioning_cli_tests.step);
 }

@@ -112,6 +112,15 @@ class BootstrapContracts(unittest.TestCase):
         self.assertFalse(complete["core_linked"])
         self.assertFalse(complete["core_abi_checked"])
         self.assertFalse(self.event(records, "graphics.config_resolved")["gpu_created"])
+        self.assertEqual(self.event(records, "project.engine_compatibility")["compatibility"], "same_version")
+
+    def test_compiled_product_identity_is_exposed_without_opening_a_project(self):
+        for executable in (EDITOR, RUNTIME):
+            records = self.run_app(executable, "--version")
+            fields = self.event(records, "application.version")
+            self.assertEqual(fields["engine_version"], "0.1.0a1")
+            self.assertEqual(fields["project_engine_version"], "0.1.0-alpha.1")
+            self.assertFalse(fields["core_abi_checked"])
 
     def test_editor_launches_real_runtime_and_compares_full_fingerprint(self):
         records = self.check(RUNTIME, expected=0)
@@ -226,7 +235,8 @@ class BootstrapContracts(unittest.TestCase):
         value = copy.deepcopy(self.base)
         value["engine"]["version"] = "99.0.0"
         self.write(value)
-        self.event(self.validate(expected=4), "project.engine_mismatch")
+        fields = self.event(self.validate(expected=4), "project.engine_incompatible")
+        self.assertEqual(fields["compatibility"], "incompatible")
 
     def test_missing_and_oversized_project(self):
         self.event(self.run_app(RUNTIME, "--project", self.directory / "missing.proj", "--validate-only", expected=3), "project.read_failed")
@@ -250,10 +260,10 @@ class BootstrapContracts(unittest.TestCase):
         table = prefix / "share/corex/presets.zon"
         original = table.read_bytes()
         table.write_bytes(original.replace(b"250.0", b"251.0"))
-        self.assertEqual(self.event(self.validate(runtime, expected=4), "distribution.invalid")["code"], "DistributionIdentityMismatch")
+        self.assertEqual(self.event(self.validate(runtime, expected=4), "distribution.invalid")["code"], "DistributionInvalid")
         table.write_bytes(original)
         (prefix / "share/corex/distribution.json").write_text("{}", encoding="utf-8")
-        self.event(self.validate(runtime, expected=4), "distribution.invalid")
+        self.assertEqual(self.event(self.validate(runtime, expected=4), "distribution.manifest_corrupted")["code"], "ManifestCorrupted")
 
     def test_missing_or_relative_child_is_not_path_searched(self):
         self.event(self.check(self.directory / "missing runtime"), "runtime.check_failed")

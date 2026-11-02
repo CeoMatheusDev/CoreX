@@ -8,7 +8,10 @@ ADR-001 e schemas `.proj`/presets aprovados pelo usuário em 2026-11-01. Detalhe
 
 ```text
 CoreX/
-├── build.zig / build.zig.zon       # [existente] build legado; sem migração de core nesta fatia
+├── build.zig / build.zig.zon       # [existente] build legado; identidade Engine vem de VERSION
+├── VERSION                        # [atual] única autoridade da versão de produto
+├── VERSIONING.md / CHANGELOG.md    # política e histórico sem releases presumidos
+├── versioning/README.md            # uso do CLI Zig version/release
 ├── src/                           # [existente] biblioteca core; não duplicar em aplicações
 ├── .gitattributes                 # [atual] LF estável para fontes/fixtures e hashes
 ├── shared/                        # [atual] pacote independente de contratos/bootstrap
@@ -23,7 +26,10 @@ CoreX/
 │   ├── cli.zig                    # argumentos estritos, modos e combinações permitidas
 │   ├── logging.zig                # encoder/sink JSON lines de bootstrap, escritor único
 │   ├── jsonl.zig                  # framing incremental e validação do envelope recebido
-│   ├── distribution.zig           # manifesto/tabela instalados relativos ao executável
+│   ├── product_version.zig        # parser/comparador/transições da versão CoreX
+│   ├── engine_identity.zig        # identidade de produto injetada no build
+│   ├── build_identity.zig         # leitor Zig de VERSION usado pelos builds
+│   ├── distribution.zig           # manifesto/tabela e compatibilidade explícita
 │   ├── fingerprint.zig            # hash dos valores normalizados + tabela/distribuição
 │   ├── bootstrap.zig              # orquestração compartilhada, sem estado entre processos
 │   ├── testing_allocator.zig      # helper de OOM determinístico; não altera produção
@@ -31,7 +37,7 @@ CoreX/
 │   ├── fixtures/
 │   │   ├── EmptyGame.proj         # exemplo aprovado espelhado de docs/examples
 │   │   ├── presets.zon            # única tabela aprovada usada no build/distribuição
-│   │   └── distribution.json      # identidade da distribuição e SHA-256 da tabela
+│   │   └── distribution.template.json # template; build gera identidade e SHA-256 da tabela
 │   ├── platform_ext/
 │   │   ├── process.zig            # [atual] captura de dois pipes, deadline, propriedade/reap
 │   │   ├── process_native.c / .h  # [atual] observar término sem reap e terminar via SO

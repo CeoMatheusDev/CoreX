@@ -7,6 +7,7 @@ const project = @import("project.zig");
 const distribution = @import("distribution.zig");
 const graphics_abi = @import("graphics_abi.zig");
 const fingerprint = @import("fingerprint.zig");
+const engine_identity = @import("engine_identity.zig");
 const logging = @import("logging.zig");
 const jsonl = @import("jsonl.zig");
 const process = @import("platform_ext/process.zig");
@@ -49,9 +50,19 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
     };
     if (options.help) {
         try logger.emit(.info, "cli.help", "Bootstrap de validacao; execucao grafica/simulacao ainda indisponivel", .{
-            .usage = if (kind == .editor) "CoreXEditor (--project <file.proj> | <file.proj>) [--headless] [--validate-only] [--check-runtime <absolute-executable>]" else "CoreXRuntime --project <file.proj> [--headless] [--validate-only]",
+            .usage = if (kind == .editor) "CoreXEditor (--version | --project <file.proj> | <file.proj>) [--headless] [--validate-only] [--check-runtime <absolute-executable>]" else "CoreXRuntime (--version | --project <file.proj> [--headless] [--validate-only])",
             .validation_scope = "document_and_presets",
             .core_linked = false,
+        });
+        return .success;
+    }
+    if (options.version) {
+        try logger.emit(.info, "application.version", "Identidade de produto compilada no binario", .{
+            .application = kind,
+            .engine_version = engine_identity.version_string,
+            .project_engine_version = engine_identity.project_engine_version,
+            .distribution_manifest_format = @as(u32, 1),
+            .core_abi_checked = false,
         });
         return .success;
     }
@@ -97,14 +108,28 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
         return .unavailable;
     }
     var bundle = distribution.load(a, io) catch |err| {
-        try logger.emit(.@"error", "distribution.invalid", "Distribuicao ausente ou divergente; nao ha fallback de presets", .{ .code = @errorName(err) });
+        const event = if (err == error.ManifestCorrupted) "distribution.manifest_corrupted" else "distribution.invalid";
+        try logger.emit(.@"error", event, "Distribuicao ausente ou divergente; nao ha fallback de presets", .{ .code = @errorName(err) });
         return .unavailable;
     };
     defer bundle.deinit();
-    if (!std.mem.eql(u8, document.value.engine.version, bundle.manifest.value.engine_version)) {
-        try logger.emit(.@"error", "project.engine_mismatch", "Versao do projeto difere da distribuicao de aplicacao", .{ .required = document.value.engine.version, .packaged = bundle.manifest.value.engine_version, .core_abi_checked = false });
+    const compatibility = distribution.classify(document.value.engine.version, bundle.manifest.value);
+    if (compatibility == .incompatible) {
+        try logger.emit(.@"error", "project.engine_incompatible", "A versao requerida nao esta na lista explicita de compatibilidade desta distribuicao", .{
+            .required = document.value.engine.version,
+            .packaged = bundle.manifest.value.engine_version,
+            .project_engine_version = bundle.manifest.value.project_engine_version,
+            .compatibility = compatibility,
+            .core_abi_checked = false,
+        });
         return .unavailable;
     }
+    try logger.emit(.info, "project.engine_compatibility", "Compatibilidade de Engine aprovada pelo manifesto validado", .{
+        .required = document.value.engine.version,
+        .packaged = bundle.manifest.value.engine_version,
+        .compatibility = compatibility,
+        .core_abi_checked = false,
+    });
     const params = bundle.table.value.resolve(document.value.renderer.graphics_preset, document.value.renderer.overrides) catch |err| {
         try logger.emit(.@"error", "presets.invalid_configuration", "Preset e overrides produzem configuracao invalida", .{ .code = @errorName(err) });
         return .project;

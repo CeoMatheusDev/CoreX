@@ -11,4 +11,5 @@ test {
     _ = @import("workspace.zig");
     _ = @import("project_preflight.zig");
     _ = @import("project_opening.zig");
+    _ = @import("resource_discovery.zig");
 }

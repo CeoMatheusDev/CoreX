@@ -12,11 +12,12 @@ zig build
 zig build test
 ```
 
-Importa `../shared`, compila C com `-std=c23` e instala `zig-out/bin/CoreXRuntime` (Windows: `.exe`) com `zig-out/share/corex/{distribution.json,presets.zon}`. Instalação incompleta/corrompida é erro, sem fallback em CWD/projeto.
+Importa `../shared`, compila C com `-std=c23` e instala `zig-out/bin/CoreXRuntime` (Windows: `.exe`) com `zig-out/share/corex/{distribution.json,presets.zon}`. O manifesto e a identidade embutida são gerados a partir de `../VERSION`. Instalação incompleta/corrompida é erro, sem fallback em CWD/projeto.
 
 ## Uso (na raiz do repositório)
 
 ```sh
+runtime/zig-out/bin/CoreXRuntime --version
 runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --validate-only
 ```
 

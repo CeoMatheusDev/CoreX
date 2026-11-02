@@ -3,5 +3,5 @@
     .fingerprint = 0xc5015914b2e1b979,
     .version = "0.1.0",
     .minimum_zig_version = "0.17.0",
-    .paths = .{ "build.zig", "build.zig.zon", "root.zig", "scope.zig", "project.zig", "presets.zig", "validation.zig", "limits.zig", "contract_tests.zig", "testing_allocator.zig", "fixtures", "graphics_abi.zig", "graphics_abi.h", "graphics_abi.c", "README.md", "cli.zig", "logging.zig", "jsonl.zig", "distribution.zig", "fingerprint.zig", "bootstrap.zig", "platform_ext" },
+    .paths = .{ "build.zig", "build.zig.zon", "root.zig", "scope.zig", "project.zig", "presets.zig", "validation.zig", "limits.zig", "contract_tests.zig", "testing_allocator.zig", "fixtures", "graphics_abi.zig", "product_version.zig", "engine_identity.zig", "build_identity.zig", "graphics_abi.h", "graphics_abi.c", "README.md", "cli.zig", "logging.zig", "jsonl.zig", "distribution.zig", "fingerprint.zig", "bootstrap.zig", "platform_ext" },
 }
