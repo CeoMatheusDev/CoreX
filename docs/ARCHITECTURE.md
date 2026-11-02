@@ -13,7 +13,7 @@ Este documento descreve a arquitetura observável do CoreX e distingue component
 
 ## 2. Estado arquitetural
 
-\`\`\`text
+```text
                     ┌───────────────────────────┐
                     │       CoreX Project       │
                     └─────────────┬─────────────┘
@@ -32,7 +32,7 @@ Este documento descreve a arquitetura observável do CoreX e distingue component
                        │ schemas / presets  │
                        │ CLI / JSONL / ABI  │
                        └─────────────────────┘
-\`\`\`
+```
 
 O diagrama representa o fluxo de contratos e validação atualmente implementado. Não representa um pipeline gráfico ou um game loop.
 
