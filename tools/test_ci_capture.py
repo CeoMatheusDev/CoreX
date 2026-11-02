@@ -233,6 +233,111 @@ class CaptureTests(unittest.TestCase):
         self.assertIn(b"::error title=CI command failed::exit 124:", stdout)
 
     @unittest.skipUnless(sys.platform.startswith("linux") and ZIG_CAPTURE, "Linux Zig prototype only")
+    def test_timeout_with_blocked_stdout_reaps_child(self):
+        with tempfile.TemporaryDirectory(prefix="ci stdout bloqueado ") as temporary:
+            pidfile = Path(temporary) / "pid"
+            code = ("import os, pathlib, signal, sys; "
+                    "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                    "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); "
+                    "exec(\"while True:\\n os.write(1, b'x' * 4096)\")")
+            env = env_for(True)
+            env["COREX_CI_CAPTURE_TIMEOUT_MS"] = "1200"
+            process = subprocess.Popen([*command(code), str(pidfile)], stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, env=env, start_new_session=True)
+            try:
+                # Intentionally do not read stdout. Its pipe fills and should
+                # not prevent the configured timeout from reaping the child.
+                process.wait(timeout=6)
+                stdout, stderr = process.communicate(timeout=2)
+                self.assertEqual(process.returncode, 124, (stderr, stdout[-1024:]))
+                self.assertIn(b"timed out after 1200 ms", stderr)
+                self.assertGreater(len(stdout), 0)
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(int(pidfile.read_text()), 0)
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                if process.poll() is None:
+                    process.communicate(timeout=5)
+                process.stdout.close()
+                process.stderr.close()
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and ZIG_CAPTURE, "Linux Zig prototype only")
+    def test_annotation_deadline_with_blocked_stdout(self):
+        import fcntl
+
+        # Keep the child waiting while reducing the outer pipe capacity, so the
+        # 4 KiB payload fits but its escaped failure annotation cannot fit.
+        code = "import os, sys; os.read(0, 1); os.write(1, b'%' * 4000); sys.exit(7)"
+        env = env_for(True)
+        env["COREX_CI_CAPTURE_TIMEOUT_MS"] = "1200"
+        process = subprocess.Popen(command(code), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, env=env, start_new_session=True)
+        try:
+            fcntl.fcntl(process.stdout.fileno(), fcntl.F_SETPIPE_SZ, 4096)
+            process.stdin.write(b"x")
+            process.stdin.flush()
+            # Not consuming stdout should not hang in annotation emission.
+            process.wait(timeout=6)
+            stdout, stderr = process.communicate(timeout=2)
+            self.assertEqual(process.returncode, 124, (stderr, stdout[-1024:]))
+            self.assertTrue(stdout.startswith(b"%" * 4000))
+            self.assertIn(b"timed out after 1200 ms", stderr)
+            self.assertIn(b"could not complete its annotation", stderr)
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            if process.poll() is None:
+                process.communicate(timeout=5)
+            process.stdin.close()
+            process.stdout.close()
+            process.stderr.close()
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and ZIG_CAPTURE, "Linux Zig prototype only")
+    def test_stdout_backpressure_recovers_without_losing_bytes(self):
+        import time
+
+        code = "import os\nfor _ in range(64):\n os.write(1, b'x' * 4096)"
+        env = env_for()
+        env["COREX_CI_CAPTURE_TIMEOUT_MS"] = "5000"
+        process = subprocess.Popen(command(code), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env=env, start_new_session=True)
+        try:
+            time.sleep(0.2)
+            stdout, stderr = process.communicate(timeout=7)
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertEqual(stdout, b"x" * (64 * 4096))
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate(timeout=5)
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and ZIG_CAPTURE, "Linux Zig prototype only")
+    def test_stdout_file_status_flags_are_not_mutated(self):
+        import fcntl
+
+        read_fd, write_fd = os.pipe()
+        try:
+            flags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
+            env = env_for()
+            env["COREX_CI_CAPTURE_TIMEOUT_MS"] = "5000"
+            result = subprocess.run(command("print('ok')"), stdout=write_fd,
+                                    stderr=subprocess.PIPE, env=env, timeout=7)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(fcntl.fcntl(write_fd, fcntl.F_GETFL), flags)
+            os.close(write_fd)
+            write_fd = None
+            self.assertEqual(os.read(read_fd, 3), b"ok\n")
+        finally:
+            os.close(read_fd)
+            if write_fd is not None:
+                os.close(write_fd)
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and ZIG_CAPTURE, "Linux Zig prototype only")
     def test_closed_standard_output_fails_without_starting_child(self):
         with tempfile.TemporaryDirectory(prefix="ci closed fd ") as temporary:
             marker = Path(temporary) / "started"

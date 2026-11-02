@@ -56,8 +56,9 @@ def extract_verified(data: bytes, digest: str, prefix: str, destination: Path) -
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive-dir", type=Path, help="use local zigway.tar.gz and zyntra_ui.tar.gz instead of downloading")
+    parser.add_argument("--zig", type=Path, help="use an existing Zig executable instead of the Python ziglang package")
     args = parser.parse_args()
-    zig = [sys.executable, "-m", "ziglang"]
+    zig = [str(args.zig.resolve(strict=True))] if args.zig else [sys.executable, "-m", "ziglang"]
     version = subprocess.check_output([*zig, "version"], text=True).strip()
     if version != "0.17.0":
         raise SystemExit(f"Expected Zig 0.17.0, got {version}")

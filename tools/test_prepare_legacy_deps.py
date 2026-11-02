@@ -6,7 +6,9 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
+import prepare_legacy_deps as prepare
 from prepare_legacy_deps import extract_verified
 
 
@@ -31,6 +33,45 @@ class ArchiveVerificationTests(unittest.TestCase):
 
     def extract(self, data, digest=None):
         extract_verified(data, digest or hashlib.sha256(data).hexdigest(), "pkg", self.dest)
+
+    def test_external_zig_is_used_for_version_and_fetch(self):
+        wheel = archive("pkg/sub/file")
+        digest = hashlib.sha256(wheel).hexdigest()
+        archives = self.dest / "archives"
+        archives.mkdir()
+        (archives / "sample.tar.gz").write_bytes(wheel)
+        (self.dest / "build.zig.zon").write_text('.hash = "sample-hash"', encoding="utf-8")
+        zig = self.dest / "zig executable"
+        zig.touch()
+        packages = (("sample", "v1", "pkg", digest, "sample-hash"),)
+        calls = []
+
+        def fake_check_output(argv, **kwargs):
+            calls.append((argv, kwargs))
+            if argv[-1] == "version":
+                return "0.17.0\n"
+            self.assertEqual(argv[0], str(zig))
+            self.assertEqual(argv[1], "fetch")
+            self.assertTrue(Path(argv[2], "sub/file").is_file())
+            self.assertEqual(kwargs["cwd"], self.dest)
+            return "sample-hash\n"
+
+        with mock.patch.object(prepare, "ROOT", self.dest), \
+             mock.patch.object(prepare, "PACKAGES", packages), \
+             mock.patch.object(prepare.subprocess, "check_output", side_effect=fake_check_output), \
+             mock.patch.object(prepare.sys, "argv", ["prepare_legacy_deps.py", "--archive-dir", str(archives), "--zig", str(zig)]):
+            prepare.main()
+        self.assertEqual(calls[0][0], [str(zig), "version"])
+        self.assertEqual(len(calls), 2)
+
+    def test_external_zig_wrong_version_fails_before_fetch(self):
+        zig = self.dest / "zig"
+        zig.touch()
+        with mock.patch.object(prepare.subprocess, "check_output", return_value="0.16.0\n") as output, \
+             mock.patch.object(prepare.sys, "argv", ["prepare_legacy_deps.py", "--zig", str(zig)]):
+            with self.assertRaisesRegex(SystemExit, "Expected Zig 0.17.0"):
+                prepare.main()
+        output.assert_called_once_with([str(zig), "version"], text=True)
 
     def test_valid_archive(self):
         self.extract(archive("pkg/sub/file"))

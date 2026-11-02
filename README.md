@@ -11,30 +11,36 @@ ADR e schemas aprovados. Contratos em [`shared/`](shared/README.md) e bootstraps
 - [CLI executável e limites](docs/APPLICATION_CLI.md)
 - [Estrutura-alvo](docs/APPLICATION_LAYOUT.md)
 - [Progresso e evidências atuais](docs/APPLICATION_PROGRESS.md)
+- [Migração para desenvolvimento sem Python](docs/PYTHON_REMOVAL.md)
 - [Contrato `.proj` v1](docs/PROJECT_SCHEMA_V1.md)
 - [Contrato `presets.zon` v1](docs/PRESETS_SCHEMA_V1.md)
 
-As seções abaixo registram o estado histórico do core, não evidência de build/renderer nesta sessão. O build legado apresentou falha de resolução dos pacotes; consulte o relatório atual antes de assumir compilação limpa ou recursos gráficos funcionais.
+As seções abaixo descrevem o core legado, não evidência de recursos gráficos funcionais. A preparação atual das dependências contorna falhas de resolução de pacotes; consulte o relatório de progresso para resultados e limites.
+
+## Validação nativa com Zig
+
+Com Zig 0.17.0 já disponível e as dependências legadas preparadas, `zig build validate -j2 --summary all` reúne formatação, ferramentas, fixtures, política de alvos, headers e testes Shared/Editor/Runtime. A validação é nativa; `zig build check -Dtarget=x86_64-windows-gnu` continua compilando sem executar. A CI e alguns testes ainda exigem Python: veja o [inventário e plano de migração](docs/PYTHON_REMOVAL.md).
 
 ## Core legado — build e testes de fumaça
 
 O executável legado é uma demonstração independente, não o Editor/Runtime novo. Seu loader retorna uma configuração fixa, o backend gráfico é null e subsistemas como assets ainda contêm stubs; a saída do programa não comprova carregamento de projeto, GPU ou execução de jogo.
 
-Para reproduzir no Linux com Python e desenvolvimento X11 instalado (por exemplo, `libx11-dev` no Ubuntu):
+Para reproduzir no Linux com as ferramentas de sistema indicadas abaixo e desenvolvimento X11 instalado (por exemplo, `libx11-dev` no Ubuntu):
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install --require-hashes --only-binary=:all: -r tools/zig-requirements.txt
-python tools/test_prepare_legacy_deps.py
-python tools/prepare_legacy_deps.py
-python -m ziglang build
-python -m ziglang build test --summary all
-python -m ziglang build test -Doptimize=ReleaseSafe --summary all
+# A instalação do Zig não usa Python; escolha um diretório que ainda não exista.
+mkdir -p .cache
+sh tools/install_zig.sh "$PWD/.cache/zig-0.17.0"
+ZIG_EXE="$PWD/.cache/zig-0.17.0/ziglang/zig"
+# Preparação e verificação das dependências sem Python.
+sh tools/prepare_legacy_deps.sh --zig "$ZIG_EXE"
+"$ZIG_EXE" build
+"$ZIG_EXE" build test --summary all
+"$ZIG_EXE" build test -Doptimize=ReleaseSafe --summary all
 ./zig-out/bin/CoreXEngine
 ```
 
-O preparador baixa os arquivos das versões fixadas, confere o SHA-256 dos arquivos e o hash de pacote Zig declarado no manifesto e inicializa o cache a partir dos diretórios extraídos. É uma solução alternativa para o cache de tarballs com pasta extra observado no Zig 0.17.0; não altera o manifesto ou os pacotes upstream. Para uso offline, forneça `--archive-dir` com `zigway.tar.gz` e `zyntra_ui.tar.gz` correspondentes às versões fixadas. A suíte legada cobre lifecycle, IDs, fila sequencial de jobs, Event Bus síncrono limitado e renderer null, além de regressões de FIFO, reentrada e falhas de alocação; não executa todos os arquivos históricos em `tests/`. A fila e o [Event Bus](docs/EVENT_BUS.md) não são paralelos nem thread-safe, e não estão integrados ao Runtime. A CI adicionada para essa fatia ainda depende de execução remota.
+O instalador requer `curl`, `unzip`, `sha256sum` e utilitários POSIX; o preparador em shell/Zig requer `curl` para download e utilitários POSIX. O preparador baixa os arquivos das versões fixadas, confere o SHA-256 dos arquivos e o hash de pacote Zig declarado no manifesto e inicializa o cache a partir dos diretórios extraídos. É uma solução alternativa para o cache de tarballs com pasta extra observado no Zig 0.17.0; não altera o manifesto ou os pacotes upstream. Para uso offline, forneça `--archive-dir` com `zigway.tar.gz` e `zyntra_ui.tar.gz` correspondentes às versões fixadas. A suíte legada cobre lifecycle, IDs, fila sequencial de jobs, Event Bus síncrono limitado e renderer null, além de regressões de FIFO, reentrada e falhas de alocação; não executa todos os arquivos históricos em `tests/`. A fila e o [Event Bus](docs/EVENT_BUS.md) não são paralelos nem thread-safe, e não estão integrados ao Runtime. A CI legada do PR #7 passou; alterações posteriores ainda exigem nova validação remota.
 
 ## Integração de Melhorias Recentes
 

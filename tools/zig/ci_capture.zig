@@ -102,21 +102,48 @@ fn remainingMs(io: Io, deadline: Io.Timestamp) !i32 {
     return @intCast(@divTrunc(remaining + std.time.ns_per_ms - 1, std.time.ns_per_ms));
 }
 
-fn waitReadable(io: Io, fd: std.os.linux.fd_t, deadline: Io.Timestamp) !void {
+fn waitReady(io: Io, fd: std.os.linux.fd_t, events: i16, deadline: Io.Timestamp) !void {
     const linux = std.os.linux;
-    var fds = [_]linux.pollfd{.{ .fd = fd, .events = linux.POLL.IN, .revents = 0 }};
+    var fds = [_]linux.pollfd{.{ .fd = fd, .events = events, .revents = 0 }};
     while (true) {
         const result = linux.poll(&fds, 1, try remainingMs(io, deadline));
         switch (linux.errno(result)) {
             .SUCCESS => {
                 if (result == 0) continue;
                 if (fds[0].revents & linux.POLL.NVAL != 0) return error.InvalidPipe;
-                return; // read also observes EOF on HUP and errors on ERR
+                return; // the following read/write observes HUP or ERR
             },
             .INTR => continue,
             else => return error.PollFailed,
         }
     }
+}
+
+// Do not change O_NONBLOCK: stdout can share its file description with the
+// parent. Poll before <= PIPE_BUF writes so a full Linux pipe can time out.
+// Other sinks and concurrent writers can still block after readiness.
+fn writeOutput(io: Io, data: []const u8, deadline: ?Io.Timestamp) !void {
+    const out = Io.File.stdout();
+    if (deadline) |limit| {
+        var offset: usize = 0;
+        while (offset < data.len) {
+            try waitReady(io, out.handle, std.os.linux.POLL.OUT, limit);
+            const end = @min(offset + 4096, data.len);
+            try out.writeStreamingAll(io, data[offset..end]);
+            offset = end;
+        }
+    } else {
+        try out.writeStreamingAll(io, data);
+    }
+}
+
+fn annotation(io: Io, tail: []const u8, code: i32, deadline: ?Io.Timestamp) !void {
+    if (tail.len != 0 and tail[tail.len - 1] != '\n') try writeOutput(io, "\n", deadline);
+    var header: [80]u8 = undefined;
+    try writeOutput(io, try std.fmt.bufPrint(&header, "::error title=CI command failed::exit {d}: ", .{code}), deadline);
+    var escaped: [tail_limit * 3]u8 = undefined;
+    try writeOutput(io, escapedTail(tail, &escaped), deadline);
+    try writeOutput(io, "\n", deadline);
 }
 
 fn waitUntilExited(io: Io, pid: std.os.linux.pid_t, deadline: Io.Timestamp) !void {
@@ -146,13 +173,13 @@ fn forceReap(child: *std.process.Child, io: Io) void {
 fn drainAndWait(init: std.process.Init, child: *std.process.Child, reader: Io.File, tail: *Tail, deadline: ?Io.Timestamp) !std.process.Child.Term {
     var chunk: [4096]u8 = undefined;
     while (true) {
-        if (deadline) |limit| try waitReadable(init.io, reader.handle, limit);
+        if (deadline) |limit| try waitReady(init.io, reader.handle, std.os.linux.POLL.IN, limit);
         const n = reader.readStreaming(init.io, &.{&chunk}) catch |err| switch (err) {
             error.EndOfStream => break,
             else => return err,
         };
         if (n == 0) continue;
-        try Io.File.stdout().writeStreamingAll(init.io, chunk[0..n]);
+        try writeOutput(init.io, chunk[0..n], deadline);
         tail.push(chunk[0..n]);
     }
     if (deadline) |limit| try waitUntilExited(init.io, child.id.?, limit);
@@ -186,11 +213,13 @@ fn capture(init: std.process.Init, argv: []const []const u8) !u8 {
     writer.close(init.io);
     writer_open = false;
     var tail: Tail = .{};
+    var timed_out = false;
     const status: Status = if (drainAndWait(init, &child, reader, &tail, deadline)) |term|
         exitStatus(term)
     else |err| switch (err) {
         error.Timeout => blk: {
             forceReap(&child, init.io);
+            timed_out = true;
             std.debug.print("CI command timed out after {d} ms\n", .{timeout_ms.?});
             break :blk .{ .code = @as(u8, 124), .annotation = @as(i32, 124) };
         },
@@ -198,14 +227,20 @@ fn capture(init: std.process.Init, argv: []const []const u8) !u8 {
     };
     const actions = init.environ_map.get("GITHUB_ACTIONS") orelse "";
     if (status.code != 0 and std.mem.eql(u8, actions, "true")) {
-        const out = Io.File.stdout();
-        const suffix = tail.slice();
-        if (suffix.len != 0 and suffix[suffix.len - 1] != '\n') try out.writeStreamingAll(init.io, "\n");
-        var header: [80]u8 = undefined;
-        try out.writeStreamingAll(init.io, try std.fmt.bufPrint(&header, "::error title=CI command failed::exit {d}: ", .{status.annotation}));
-        var escaped: [tail_limit * 3]u8 = undefined;
-        try out.writeStreamingAll(init.io, escapedTail(suffix, &escaped));
-        try out.writeStreamingAll(init.io, "\n");
+        // After a timeout give the annotation a short best-effort window; a
+        // blocked log consumer must not indefinitely hold the reaped child.
+        const annotation_deadline = if (timed_out)
+            Io.Clock.awake.now(init.io).addDuration(.fromMilliseconds(100))
+        else
+            deadline;
+        annotation(init.io, tail.slice(), status.annotation, annotation_deadline) catch |err| switch (err) {
+            error.Timeout => {
+                if (!timed_out) std.debug.print("CI command timed out after {d} ms\n", .{timeout_ms.?});
+                std.debug.print("CI capture could not complete its annotation before the output deadline\n", .{});
+                return 124;
+            },
+            else => return err,
+        };
     }
     return status.code;
 }

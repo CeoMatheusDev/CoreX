@@ -29,30 +29,40 @@ jobs:
       - name: Check workflow YAML syntax
         run: |
           yamllint -d '{rules: {}}' .github/workflows
-      - name: Install exact toolchain (wheel hashes verified)
+      - name: Install exact Zig toolchain without Python
         run: |
-          python -m pip install --require-hashes --only-binary=:all: -r tools/zig-requirements.txt
+          sh tools/test_install_zig.sh
+          sh tools/install_zig.sh "$RUNNER_TEMP/corex-zig"
+          echo "ZIG_EXE=$RUNNER_TEMP/corex-zig/ziglang/zig" >> "$GITHUB_ENV"
       - name: Verify compiler version
-        run: python -c "import subprocess; v = subprocess.check_output(['python', '-m', 'ziglang', 'version'], text=True).strip(); assert v == '0.17.0', v"
+        run: test "$("$ZIG_EXE" version)" = '0.17.0'
+      - name: Guard Python migration inventory
+        run: |
+          sh tools/check_python_inventory.sh
+          sh tools/test_python_inventory.sh
       - name: Test CI output capture
         run: python tools/test_ci_capture.py
-      - name: Check approved fixtures
-        run: python tools/check_contract_fixtures.py
-      - name: Test Zig tooling (Debug and ReleaseSafe)
+      - name: Test Zig tooling and fixture CLI (Debug and ReleaseSafe)
         working-directory: tools/zig
         run: |
-          python -m ziglang build test --summary all
-          python -m ziglang build test -Doptimize=ReleaseSafe --summary all
+          "$ZIG_EXE" build test --summary all
+          "$ZIG_EXE" build test -Doptimize=ReleaseSafe --summary all
       - name: Build Zig tooling (Debug and ReleaseSafe)
         working-directory: tools/zig
         run: |
-          python -m ziglang build --summary all
-          python -m ziglang build -Doptimize=ReleaseSafe --prefix .zig-cache/release --summary all
+          "$ZIG_EXE" build --summary all
+          "$ZIG_EXE" build -Doptimize=ReleaseSafe --prefix .zig-cache/release --summary all
+      - name: Test native Zig validation and fixture freshness
+        run: |
+          empty_path="$(mktemp -d)"
+          trap 'rm -rf "$empty_path"' EXIT
+          (cd tools/zig && PATH="$empty_path" "$ZIG_EXE" build validate -j2 --summary all)
+          sh tools/test_zig_validate.sh "$ZIG_EXE"
       - name: Test experimental Zig CI capture (not used by jobs)
         run: |
           COREX_CAPTURE_BIN="$PWD/tools/zig/zig-out/bin/corex-ci-capture" python tools/test_ci_capture.py
           COREX_CAPTURE_BIN="$PWD/tools/zig/.zig-cache/release/bin/corex-ci-capture" python tools/test_ci_capture.py
-      - name: Check approved fixtures independently in Zig (shadow)
+      - name: Check approved fixtures with Zig
         run: tools/zig/zig-out/bin/corex-check-fixtures
       - name: Compare fixture checker behavior on isolated inputs
         run: |
@@ -60,49 +70,50 @@ jobs:
           python tools/test_fixture_checkers.py tools/zig/.zig-cache/release/bin/corex-check-fixtures
       - name: Cross-compile Zig tools and tests for Windows (no execution)
         working-directory: tools/zig
-        run: python -m ziglang build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+        run: |
+          "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
       - name: Check formatting
-        run: python -m ziglang fmt --check shared editor runtime tools/zig
+        run: |
+          "$ZIG_EXE" fmt --check shared editor runtime tools/zig
       - name: Test Zig and C23 contracts (Debug)
         working-directory: shared
-        run: python ../tools/ci_capture.py python -m ziglang build test --summary all
+        run: python ../tools/ci_capture.py "$ZIG_EXE" build test --summary all
       - name: Test Zig and C23 contracts (ReleaseSafe)
         working-directory: shared
-        run: python ../tools/ci_capture.py python -m ziglang build test -Doptimize=ReleaseSafe --summary all
+        run: python ../tools/ci_capture.py "$ZIG_EXE" build test -Doptimize=ReleaseSafe --summary all
       - name: Check private C header with C++20, without RTTI/exceptions
         run: python tools/ci_capture.py c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror -fsyntax-only -x c++ shared/graphics_abi.h shared/platform_ext/process_native.h
       - name: Build independent bootstraps (Debug)
         run: |
-          cd editor && python ../tools/ci_capture.py python -m ziglang build --summary all
-          cd ../runtime && python ../tools/ci_capture.py python -m ziglang build --summary all
+          cd editor && python ../tools/ci_capture.py "$ZIG_EXE" build --summary all
+          cd ../runtime && python ../tools/ci_capture.py "$ZIG_EXE" build --summary all
       - name: Test application interaction models
         run: |
-          cd editor && python ../tools/ci_capture.py python -m ziglang build test --summary all
-          cd ../runtime && python ../tools/ci_capture.py python -m ziglang build test --summary all
+          cd editor && python ../tools/ci_capture.py "$ZIG_EXE" build test --summary all
+          cd ../runtime && python ../tools/ci_capture.py "$ZIG_EXE" build test --summary all
       - name: Reject unsupported product targets (Zig)
         run: |
           ROOT="$PWD"
-          ZIG_EXE="$(python -c 'import pathlib, ziglang; print(pathlib.Path(ziglang.__file__).parent / "zig")')"
           cd tools/zig
           ./zig-out/bin/corex-check-targets --root "$ROOT" --zig "$ZIG_EXE"
       - name: Test real processes (Debug; validation only)
         run: python tools/ci_capture.py python tools/test_bootstrap.py
       - name: Build independent bootstraps (ReleaseSafe)
         run: |
-          cd editor && python ../tools/ci_capture.py python -m ziglang build -Doptimize=ReleaseSafe --summary all
-          cd ../runtime && python ../tools/ci_capture.py python -m ziglang build -Doptimize=ReleaseSafe --summary all
+          cd editor && python ../tools/ci_capture.py "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
+          cd ../runtime && python ../tools/ci_capture.py "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
       - name: Test runtime accounting (ReleaseSafe)
         working-directory: runtime
-        run: python ../tools/ci_capture.py python -m ziglang build test -Doptimize=ReleaseSafe --summary all
+        run: python ../tools/ci_capture.py "$ZIG_EXE" build test -Doptimize=ReleaseSafe --summary all
       - name: Test real processes (ReleaseSafe; validation only)
         run: python tools/ci_capture.py python tools/test_bootstrap.py
       - name: Cross-compile Windows contracts (not native execution)
         if: matrix.os == 'ubuntu-24.04'
         working-directory: shared
         run: |
-          python ../tools/ci_capture.py python -m ziglang build check -Dtarget=x86_64-windows-gnu -j2 --summary all
-          cd ../editor && python ../tools/ci_capture.py python -m ziglang build check -Dtarget=x86_64-windows-gnu -j2 --summary all
-          cd ../runtime && python ../tools/ci_capture.py python -m ziglang build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+          python ../tools/ci_capture.py "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+          cd ../editor && python ../tools/ci_capture.py "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+          cd ../runtime && python ../tools/ci_capture.py "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
 
 # Validation bootstraps only; not a full graphical Editor/Runtime CI matrix. Native Windows needs a
 # verified Zig 0.17.0 Windows distribution (P16); no wheel is published at the
