@@ -2,9 +2,9 @@ name: Application contracts and bootstraps
 
 on:
   push:
-    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', '.github/workflows/**']
+    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
   pull_request:
-    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', '.github/workflows/**']
+    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
   workflow_dispatch:
 
 permissions:
@@ -22,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -31,6 +32,18 @@ jobs:
       - name: Check workflow YAML syntax
         run: |
           yamllint -d '{rules: {}}' .github/workflows
+      - name: Check patch whitespace
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            base="origin/$GITHUB_BASE_REF"
+          else
+            base="$(jq -r '.before // empty' "$GITHUB_EVENT_PATH")"
+          fi
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git diff --check "$base...HEAD"
+          else
+            git diff --check HEAD^ HEAD
+          fi
       - name: Install exact Zig toolchain without Python
         run: |
           sh tools/test_install_zig.sh
@@ -55,6 +68,13 @@ jobs:
           "$ZIG_EXE" build --summary all
           "$ZIG_EXE" build -Doptimize=ReleaseSafe --prefix .zig-cache/release --summary all
           echo "CI_CAPTURE=$GITHUB_WORKSPACE/tools/zig/zig-out/bin/corex-ci-capture" >> "$GITHUB_ENV"
+      - name: Validate VERSION and generated distribution manifest (both modes)
+        run: |
+          expected="$(cat VERSION)"
+          test "$(tools/zig/zig-out/bin/corex-version version)" = "$expected"
+          tools/zig/zig-out/bin/corex-version validate
+          tools/zig/zig-out/bin/corex-version release check
+          tools/zig/.zig-cache/release/bin/corex-version release check
       - name: Test native Zig validation and fixture freshness
         run: |
           empty_path="$(mktemp -d)"
@@ -95,6 +115,20 @@ jobs:
         run: |
           cd editor && "$CI_CAPTURE" "$ZIG_EXE" build --summary all
           cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build --summary all
+      - name: Verify manifest reproducibility and Editor/Runtime parity
+        run: |
+          set -eu
+          temp="$(mktemp -d)"
+          trap 'rm -rf "$temp"' EXIT
+          (cd editor && ZIG_LOCAL_CACHE_DIR="$temp/editor-cache-first" "$ZIG_EXE" build --prefix "$temp/first" --summary all)
+          (cd editor && ZIG_LOCAL_CACHE_DIR="$temp/editor-cache-second" "$ZIG_EXE" build --prefix "$temp/second" --summary all)
+          cmp "$temp/first/share/corex/distribution.json" "$temp/second/share/corex/distribution.json"
+          cmp "$temp/first/share/corex/presets.zon" "$temp/second/share/corex/presets.zon"
+          cmp editor/zig-out/share/corex/distribution.json runtime/zig-out/share/corex/distribution.json
+          cmp editor/zig-out/share/corex/presets.zon runtime/zig-out/share/corex/presets.zon
+          editor_identity="$(editor/zig-out/bin/CoreXEditor --version | jq -r '.fields.engine_version + "/" + .fields.project_engine_version')"
+          runtime_identity="$(runtime/zig-out/bin/CoreXRuntime --version | jq -r '.fields.engine_version + "/" + .fields.project_engine_version')"
+          test "$editor_identity" = "$runtime_identity"
       - name: Test application interaction models
         run: |
           cd editor && "$CI_CAPTURE" "$ZIG_EXE" build test --summary all

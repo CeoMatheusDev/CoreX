@@ -46,15 +46,38 @@ The approved `.proj` schemas are unchanged: `schema_version` remains an integer 
 
 This token is not a second product-version source. It is a schema-preserving wire representation. The generated distribution manifest records both it and the product version.
 
-A project requirement equal to `project_engine_version` is `same_version`. A different SemVer is accepted only when its exact value appears in `compatible_project_engine_versions` in the manifest; that is `compatible`. Otherwise it is `incompatible`. The initial allow-list is empty (fail closed), so existing documents that still require the former `0.1.0` bootstrap identity are incompatible until that exact token is deliberately added to the allow-list or the project is explicitly updated. No automatic project rewrite/migration occurs. A valid manifest/table hash does not itself grant compatibility. Editor and Runtime share the same classifier. Compatibility does not imply that an unimplemented public core ABI has been checked.
+A project requirement equal to the compiled `project_engine_version` is `same_version`. A different SemVer is `compatible` only if it is in `shared/compatibility_policy.zig`, the allow-list compiled into the application; otherwise it is `incompatible`. The manifest's `compatible_project_engine_versions` is a declaration that must exactly match this independently compiled policy. It is never an authorization source and a self-added entry is rejected as manifest corruption. The production policy is empty (fail closed), so existing documents that still require the former `0.1.0` bootstrap identity are incompatible until that exact token is deliberately approved in the compiled policy and mirrored in the manifest. No automatic project rewrite/migration occurs. Hashes/fingerprints verify integrity or equivalence; neither grants compatibility. Editor and Runtime use the same compiled classifier. Compatibility does not imply that the unimplemented public core ABI has been checked.
 
 ## Generated build identity and distribution manifest
 
-`shared/build.zig` reads and strictly validates root `VERSION`, injects the typed identity into `corex_app`, and generates the installed `share/corex/distribution.json` from `shared/fixtures/distribution.template.json`. The root legacy CoreX binary is injected from the same file. Editor and Runtime expose the compiled identity with `--version`; their normal JSONL startup/protocol continues to report `core_abi_checked=false` until that API exists.
+`shared/build.zig` reads and strictly validates root `VERSION`, injects the typed identity into `corex_app`, and generates the installed `share/corex/distribution.json` from `shared/fixtures/distribution.template.json`. The root legacy CoreX binary is injected from the same file. Editor and Runtime expose the compiled identity with `--version`; their normal JSONL startup/protocol continues to report `core_abi_checked=false` until that API exists. `--version` uses the usual JSONL envelope, so `timestamp`, `session_id`, and per-process sequence metadata intentionally vary; parity checks compare only stable `fields` identity/format values, not complete output lines.
 
 Manifest `format_version` is independent of product version, package SemVer, `.proj` schema versions, graphics ABI, renderer contract, preset table revision, fingerprint format, dependencies, and Zig toolchain. The manifest validates its format, product version, project requirement, exact compatibility allow-list, renderer contract/table revision, and SHA-256 of the installed presets. A changed manifest is reported as `ManifestCorrupted`; missing/mismatched table resources or invalid contracts are `DistributionInvalid`. The manifest bytes are pinned to those generated into the executable. This detects inconsistent installation, not a maliciously replaced executable/manifest pair or authenticity; signing/updating remains outside this scope.
 
 The shared fingerprint now has its own version 3 because the validated manifest payload changed. It reuses the existing fingerprint implementation; there is no parallel hash format.
+
+## Trust boundary and compatibility matrix
+
+`shared/compatibility_policy.zig` is the only production source of additional accepted project SemVers. It is compiled into Shared, Editor, and Runtime. Its current list is empty. The build-pinned manifest bytes are separately embedded; at runtime the distribution loader first requires exact byte equality, then validates typed fields and the presets SHA-256, and requires the manifest's compatibility declaration to equal the compiled policy. The classifier takes only the required project version and the compiled identity/policy—never the manifest. Thus changing the installed allow-list, adding fields, reformatting bytes, or recalculating a hash/fingerprint cannot expand authorization. A fingerprint is an unkeyed digest for comparing normalized configuration, not an authorization or signature.
+
+| Project requirement | Compiled policy | Manifest | Integrity/format/schema | Result |
+| --- | --- | --- | --- | --- |
+| Equals compiled requirement | Any valid policy | Exact policy declaration | Valid | `same_version` |
+| Different, not allow-listed | Empty/current policy | Exact policy declaration | Valid | `incompatible` |
+| Different, test-only allow-listed | Isolated unit-test policy only | Exact declaration helper checked in the test | No production manifest altered | `compatible` only in the isolated classifier test |
+| Any | Empty policy | Self-adds a version | Even with valid/recomputed presets SHA or configuration fingerprint | Manifest rejected; no authorization |
+| Any | Any | Different bytes, malformed/duplicate/missing/extra/format/ABI-like fields | Any | `ManifestCorrupted` |
+| Any | Any | Exact manifest but missing/mismatched table or invalid renderer contract | Any | `DistributionInvalid` |
+| Any | Any | Valid distribution | Unsupported `.proj` schema | Project parser rejects before compatibility |
+| Any | Any | Valid distribution | Public core ABI not defined/checked | `core_abi_checked=false`; no ABI compatibility claim |
+
+The distribution manifest currently has no `abi_version`, `.proj schema_version`, or generic distribution fingerprint field. Renderer contract and `format_version` are distinct, validated fields. An injected `abi_version` or `fingerprint` is an unexpected field and is rejected; public ABI negotiation remains explicitly unimplemented rather than being represented by a fabricated identifier.
+
+## Determinism scope
+
+The generated `distribution.json` is assembled from a fixed LF template, canonical `VERSION`, the deterministic SemVer projection, a source-controlled ordered compatibility policy, and the SHA-256 of the approved `presets.zon`. Release stage/revision are encoded in `engine_version`; the current manifest has no separate component-version array or build-number field. Package/dependency versions remain in their own manifests. It contains no timestamps, absolute paths, machine/environment values, random identifiers, or Git metadata. Field order/whitespace come from the template; policy order is compile-controlled. ABI and `.proj` schema are intentionally not manifest fields; `.proj` schema is validated from the project document, while public ABI checking remains unavailable. The presets digest authenticates the table bytes against accidental/inconsistent changes, not publisher authenticity.
+
+The runtime fingerprint is SHA-256 over typed, normalized `.proj` values, resolved parameters, and the validated manifest, serialized by a fixed Zig struct field order. Input JSON property order/format is normalized by parsing into the typed project model; numbers are represented by their validated target types. It excludes clocks, CWD, PIDs, sessions, and machine paths. The fingerprint identifies validation inputs, not executable bytes or every dependency/build input. No byte-for-byte binary reproducibility claim is made; repeat builds compare the manifest and exposed identity, not whole executable files.
 
 ## CoreX support policy
 
@@ -73,4 +96,4 @@ zig test shared/product_version.zig
 (cd shared && zig build check -Dtarget=x86_64-windows-gnu)
 ```
 
-The full commands and constraints are in [`versioning/README.md`](versioning/README.md). Release history is recorded in [`CHANGELOG.md`](CHANGELOG.md); no earlier CoreX product releases are inferred here.
+Commandes, procedimentos Linux/Windows e estado de validação estão em [`docs/VERSIONING_VALIDATION.md`](docs/VERSIONING_VALIDATION.md) e [`versioning/README.md`](versioning/README.md). Release history is recorded in [`CHANGELOG.md`](CHANGELOG.md); no earlier CoreX product releases are inferred here.

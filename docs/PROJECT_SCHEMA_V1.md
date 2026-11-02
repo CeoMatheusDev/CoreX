@@ -1,4 +1,4 @@
-> **Compatibilidade:** v1 permanece imutável. Projetos novos do perfil Windows/Linux 3D/Canvas usam [v2](PROJECT_SCHEMA_V2.md); Metal/WebGPU históricos são inspecionáveis, não executáveis.
+> **Compatibilidade:** v1 permanece imutável. Projetos novos podem usar [v3](PROJECT_SCHEMA_V3.md), com Renderer selecionado explicitamente; [v2](PROJECT_SCHEMA_V2.md) também permanece válido e inalterado. O leitor atual aceita `[1,2,3]`; as mensagens e exemplos de erro abaixo descrevem a versão histórica do contrato V1. Metal/WebGPU históricos são inspecionáveis, não executáveis.
 
 # Contrato `.proj` v1 — aprovado (item 2)
 
@@ -81,7 +81,7 @@ Não reutilizar UUID ao criar um novo projeto por cópia explícita/template. Fa
 | `version` | string SemVer | sim | identidade exata da distribuição exigida; sem intervalos, `latest` ou curingas |
 | `graphics_backend` | enum | sim | `vulkan`, `webgpu`, `d3d12`, `metal` |
 
-`engine.version` continua sendo uma string SemVer por contrato do schema aprovado. O manifesto gerado inclui o produto `MAJOR.MINOR.PATCH{a|b|f|p}N` e o `project_engine_version` SemVer derivado para esse campo. Igualdade com esse token resulta em `same_version`; outra versão só resulta em `compatible` se estiver enumerada exatamente em `compatible_project_engine_versions`; do contrário é incompatível. Hash válido não substitui essa decisão. ABI é negociada adicionalmente em runtime, não inferida do número. O `.proj` não permite trocar isoladamente sua tabela de presets. Detalhes: `VERSIONING.md`.
+`engine.version` continua sendo uma string SemVer por contrato do schema aprovado. O manifesto gerado inclui o produto `MAJOR.MINOR.PATCH{a|b|f|p}N` e o `project_engine_version` SemVer derivado para esse campo. Igualdade com esse token resulta em `same_version`; outra versão só resulta em `compatible` se estiver aprovada na política compilada `shared/compatibility_policy.zig`. `compatible_project_engine_versions` no manifesto apenas espelha essa política; o classificador não a usa como autoridade. Hash/fingerprint válido não substitui essa decisão. ABI pública não existe/está verificada; o bootstrap registra `core_abi_checked=false`. O `.proj` não permite trocar isoladamente sua tabela de presets. Detalhes: `VERSIONING.md`.
 
 Aceitar um nome de backend no schema não afirma que existe implementação na engine/SO atual. Falta de versão, ABI ou backend é erro explícito de compatibilidade/capacidade. Headless exige versão/core de simulação compatíveis, mas não exige GPU nem disponibilidade do backend gráfico pretendido.
 

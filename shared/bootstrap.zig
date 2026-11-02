@@ -83,7 +83,7 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
     defer a.free(bytes);
     var diagnostic: project.Diagnostic = .{};
     var document = project.parse(a, bytes, &diagnostic) catch |err| {
-        try logger.emit(.@"error", "project.invalid", "Projeto invalido ou schema incompativel; schemas suportados: [1,2]", .{ .code = @errorName(err), .path = path, .pointer = diagnostic.pointer(), .supported_schema_versions = [_]u32{ 1, 2 } });
+        try logger.emit(.@"error", "project.invalid", "Projeto invalido ou schema incompativel; schemas suportados: [1,2,3]", .{ .code = @errorName(err), .path = path, .pointer = diagnostic.pointer(), .supported_schema_versions = [_]u32{ 1, 2, 3 } });
         return .project;
     };
     defer document.deinit();
@@ -95,6 +95,7 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
     const decision = scope.decide(platform, document.value.engine.graphics_backend);
     try logger.emit(.info, "application.target_policy", "Elegibilidade nao comprova renderer ou capacidade GPU", .{
         .profile = scope.profile_id,
+        .renderer_profile = document.value.renderer.profile,
         .host_platform = platform,
         .backend_requested = document.value.engine.graphics_backend,
         .decision = decision,
@@ -113,7 +114,7 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
         return .unavailable;
     };
     defer bundle.deinit();
-    const compatibility = distribution.classify(document.value.engine.version, bundle.manifest.value);
+    const compatibility = distribution.classify(document.value.engine.version);
     if (compatibility == .incompatible) {
         try logger.emit(.@"error", "project.engine_incompatible", "A versao requerida nao esta na lista explicita de compatibilidade desta distribuicao", .{
             .required = document.value.engine.version,
@@ -138,6 +139,7 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
     if (graphics_abi.c.corex_graphics_validate_v1(&dto, @sizeOf(@TypeOf(dto))) != graphics_abi.c.COREX_GRAPHICS_OK) return error.GraphicsBoundaryMismatch;
     try logger.emit(.info, "graphics.config_resolved", "Parametros concretos resolvidos; nenhum device foi criado", .{
         .preset = document.value.renderer.graphics_preset,
+        .renderer_profile_requested = document.value.renderer.profile,
         .backend_requested = document.value.engine.graphics_backend,
         .table_revision = bundle.manifest.value.table_revision,
         .table_sha256 = bundle.manifest.value.presets_sha256,

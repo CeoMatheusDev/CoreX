@@ -1,4 +1,6 @@
-# CoreX — Status Final
+# CoreX — Status do snapshot legado
+
+> **Correção de estado (2026-11-02):** este arquivo registra uma demonstração legada e não deve ser interpretado como declaração de suporte gráfico. O único backend em `src/graphics/` é o Null Backend no-op/headless. Vulkan Instance/Surface/Device/Swapchain e apresentação real não existem; nenhum smoke test gráfico foi executado. Editor e Runtime ainda usam bootstraps separados e não compartilham um Engine gráfico. Ver [ADR-004](ADR-004-vulkan-surface-integration.md) e [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Compilação
 `zig build` — OK (Zig 0.17.0)
@@ -10,7 +12,8 @@
 ## Subsistemas Implementados (com contratos e testes)
 - [x] Platform / Window (`zigway`)
 - [x] UI (`zyntra_ui`)
-- [x] Graphics / Renderer (`render.zig`, `backends/null.zig`)
+- [ ] Vulkan Graphics Backend / GPU Renderer (não implementado)
+- [x] Null Backend (`render.zig`, `backends/null.zig`) — no-op para contratos/headless, não apresenta frames
 - [x] ECS (`ecs.zig`)
 - [x] Memory (`allocator.zig`)
 - [x] Job System (`jobs/`)
@@ -28,8 +31,8 @@
 - `docs/CHANGES.md`
 - `README.md` atualizado
 
-## Integração (`main.zig`)
-Todos os subsistemas integrados e demonstrados no executável `CoreXEngine`.
+## Integração legada (`src/main.zig`)
+O executável legado exercita demonstrações mínimas dos módulos listados; isso não representa a integração Editor/Runtime atual, carregamento de projeto real ou execução de Renderer/GPU. O `ProjectLoader` desta árvore fornece configuração de exemplo/fallback e o Renderer conectado é Null.
 
 ## Próximos Passos (evolução incremental)
 A base arquitetural está completa. Evolução futura depende de requisitos específicos: Vulkan backend, física, multiplayer, ferramentas visuais, exportação de builds.

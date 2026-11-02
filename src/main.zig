@@ -1,4 +1,5 @@
 const std = @import("std");
+const core_version = @import("core/version.zig");
 const Engine = @import("core/engine.zig").Engine;
 const ProjectLoader = @import("project/loader.zig").ProjectLoader;
 const World = @import("ecs/ecs.zig").World;
@@ -18,7 +19,19 @@ fn countEvent(context: *anyopaque, _: Event) void {
     count.* += 1;
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    var args = try std.process.Args.iterateAllocator(init.minimal.args, init.gpa);
+    defer args.deinit();
+    _ = args.next();
+    if (args.next()) |argument| {
+        if (std.mem.eql(u8, argument, "--version")) {
+            if (args.next() != null) return error.InvalidArguments;
+            try std.Io.File.stdout().writeStreamingAll(init.io, core_version.VERSION_STRING);
+            try std.Io.File.stdout().writeStreamingAll(init.io, "\n");
+            return;
+        }
+    }
+
     const allocator = std.heap.page_allocator;
 
     var engine = try Engine.init(allocator);

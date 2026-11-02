@@ -2,9 +2,9 @@ name: Legacy core smoke tests
 
 on:
   push:
-    paths: ['src/**', 'tests/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
+    paths: ['src/**', 'tests/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'versioning/**', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
   pull_request:
-    paths: ['src/**', 'tests/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
+    paths: ['src/**', 'tests/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'versioning/**', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
   workflow_dispatch:
 
 permissions:
@@ -17,6 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -36,9 +37,19 @@ jobs:
           python tools/test_prepare_legacy_deps.py
           python tools/prepare_legacy_deps.py --zig "$ZIG_EXE"
       - run: |
-          "$ZIG_EXE" fmt --check build.zig src/legacy_tests.zig src/zigway_input_tests.zig src/jobs/job_system.zig src/events/event.zig src/main.zig src/graphics/renderer/render.zig tests/events/test_basics.zig tests/integration/engine_pipeline.zig
-      - run: |
+          "$ZIG_EXE" fmt --check build.zig src/legacy_tests.zig src/core/version.zig src/zigway_input_tests.zig src/jobs/job_system.zig src/events/event.zig src/main.zig src/graphics/renderer/render.zig tests/events/test_basics.zig tests/integration/engine_pipeline.zig
+      - name: Build CoreXEngine (Debug)
+        run: |
           "$ZIG_EXE" build --summary all
+      - name: Verify the executable exposes VERSION identity
+        run: |
+          expected="$(cat VERSION)"
+          test "$(zig-out/bin/CoreXEngine --version)" = "$expected"
+      - name: Build CoreXEngine (ReleaseSafe)
+        run: |
+          "$ZIG_EXE" build -Doptimize=ReleaseSafe --prefix "$RUNNER_TEMP/corex-release" --summary all
+          expected="$(cat VERSION)"
+          test "$("$RUNNER_TEMP/corex-release/bin/CoreXEngine" --version)" = "$expected"
       - run: |
           "$ZIG_EXE" build test --summary all
       - run: |

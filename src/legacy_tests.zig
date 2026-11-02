@@ -1,4 +1,5 @@
 const std = @import("std");
+const core_version = @import("core/version.zig");
 const Engine = @import("core/engine.zig").Engine;
 const World = @import("ecs/ecs.zig").World;
 const Job = @import("jobs/job.zig").Job;
@@ -8,6 +9,12 @@ const Renderer = @import("graphics/renderer/render.zig").Renderer;
 test {
     _ = @import("events/event.zig");
     _ = @import("zigway_input_tests.zig");
+}
+
+test "legacy engine exposes the complete build-injected product version" {
+    const version = core_version.Version{};
+    var buffer: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(core_version.VERSION_STRING, version.toString(&buffer));
 }
 
 test "legacy engine lifecycle toggles running" {

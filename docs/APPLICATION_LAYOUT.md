@@ -27,6 +27,7 @@ CoreX/
 │   ├── logging.zig                # encoder/sink JSON lines de bootstrap, escritor único
 │   ├── jsonl.zig                  # framing incremental e validação do envelope recebido
 │   ├── product_version.zig        # parser/comparador/transições da versão CoreX
+│   ├── compatibility_policy.zig   # allow-list confiável compilada (vazia inicialmente)
 │   ├── engine_identity.zig        # identidade de produto injetada no build
 │   ├── build_identity.zig         # leitor Zig de VERSION usado pelos builds
 │   ├── distribution.zig           # manifesto/tabela e compatibilidade explícita
