@@ -65,3 +65,7 @@ O instalador requer `curl`, `unzip`, `sha256sum` e utilitários POSIX; o prepara
 - Fase 8: Asset Manager + Async Loading.
 - Fase 9: Áudio + Animação.
 - Fase 10: Otimização + Profiling.
+
+## Projeto de exemplo e abertura do Editor
+
+[exemploproject/](exemploproject/README.md) contém um `.proj` schema v2 para validar a entrada do Editor. O Editor aceita o caminho posicional e recusa iniciar sem projeto. A splash 800×600, a associação do arquivo, o carregamento de recursos e o Editor gráfico ainda não estão prontos; consulte o [ADR-004](docs/ADR-004-project-opening-splash.md).

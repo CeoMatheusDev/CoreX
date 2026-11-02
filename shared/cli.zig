@@ -10,7 +10,14 @@ pub const Options = struct {
 };
 pub const Error = error{ TooManyArguments, UnknownArgument, DuplicateArgument, MissingValue, MissingProject, InvalidPathArgument, InvalidCombination };
 
-/// args excludes argv[0]. No shell parsing, environment expansion or allocation.
+/// Validate a borrowed CLI path before use or asynchronous copying.
+pub fn validatePath(path: []const u8) Error!void {
+    if (path.len == 0 or path.len > 4096 or !std.unicode.utf8ValidateSlice(path)) return error.InvalidPathArgument;
+    for (path) |c| if (c < 32 or c == 127) return error.InvalidPathArgument;
+}
+
+/// args excludes argv[0]. Editor accepts one positional .proj for file association.
+/// No shell parsing, environment expansion or allocation.
 pub fn parse(kind: Kind, args: []const []const u8) Error!Options {
     if (args.len > 32) return error.TooManyArguments;
     var o: Options = .{};
@@ -23,9 +30,12 @@ pub fn parse(kind: Kind, args: []const []const u8) Error!Options {
             i += 1;
             if (i == args.len or std.mem.startsWith(u8, args[i], "--")) return error.MissingValue;
             const path = args[i];
-            if (path.len == 0 or path.len > 4096 or !std.unicode.utf8ValidateSlice(path)) return error.InvalidPathArgument;
-            for (path) |c| if (c < 32 or c == 127) return error.InvalidPathArgument;
+            try validatePath(path);
             if (project) o.project = path else o.check_runtime = path;
+        } else if (kind == .editor and !std.mem.startsWith(u8, arg, "-") and std.ascii.endsWithIgnoreCase(arg, ".proj")) {
+            if (o.project != null) return error.DuplicateArgument;
+            try validatePath(arg);
+            o.project = arg;
         } else if (std.mem.eql(u8, arg, "--headless")) {
             if (o.headless) return error.DuplicateArgument;
             o.headless = true;
@@ -63,4 +73,25 @@ test "CLI rejects unknown duplicate missing and conflicting arguments" {
     try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--project", "a", "--check-runtime", "/bin/player" }));
     try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--help", "--project", "a" }));
     try std.testing.expect((try parse(.editor, &.{"--help"})).help);
+}
+
+test "editor accepts a single positional project for desktop file opening" {
+    for ([_][]const u8{ "exemploproject/Example.proj", "My Game/ação.PROJ", "./--project.proj" }) |path| {
+        const o = try parse(.editor, &.{ path, "--headless", "--validate-only" });
+        try std.testing.expectEqualStrings(path, o.project.?);
+        try std.testing.expect(o.headless and o.validate_only);
+    }
+    try std.testing.expectError(error.MissingProject, parse(.editor, &.{}));
+    try std.testing.expectError(error.UnknownArgument, parse(.runtime, &.{"Game.proj"}));
+    try std.testing.expectError(error.UnknownArgument, parse(.editor, &.{"Game.txt"}));
+    try std.testing.expectError(error.UnknownArgument, parse(.editor, &.{"--Game.proj"}));
+    try std.testing.expectError(error.DuplicateArgument, parse(.editor, &.{ "first.proj", "second.proj" }));
+    try std.testing.expectError(error.DuplicateArgument, parse(.editor, &.{ "first.proj", "--project", "second.proj" }));
+    try std.testing.expectError(error.DuplicateArgument, parse(.editor, &.{ "--project", "first.proj", "second.proj" }));
+    try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--help", "first.proj" }));
+    try std.testing.expectError(error.InvalidPathArgument, parse(.editor, &.{"bad\nname.proj"}));
+    try std.testing.expectError(error.InvalidPathArgument, parse(.editor, &.{"bad\xff.proj"}));
+    var long: [4101]u8 = @splat('x');
+    @memcpy(long[4096..], ".proj");
+    try std.testing.expectError(error.InvalidPathArgument, parse(.editor, &.{&long}));
 }

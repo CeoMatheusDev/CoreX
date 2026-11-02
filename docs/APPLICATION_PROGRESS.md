@@ -4,6 +4,14 @@
 
 ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
 
+## Continuação — abertura do projeto e preflight concorrente
+
+- O requisito de splash 800×600, carregamento assíncrono, associação `.proj` e Editor dependente de projeto está em `docs/ADR-004-project-opening-splash.md`. Não há splash nem Editor gráfico nesta fatia.
+- O Editor aceita um `.proj` posicional, incluindo espaço/Unicode e extensão sem distinção de caixa, além de `--project`; dois caminhos, ou início sem projeto, são erros. O Runtime mantém sua CLI anterior. Testes black-box Zig criam instalação temporária, exercitam o binário real e verificam que o arquivo não é modificado.
+- `exemploproject/` contém documento schema v2 e pastas de exemplo. O formato de cena e os carregadores de cena/assets/scripts ainda não existem; não há cena fictícia apresentada como funcional.
+- `editor/src/project_preflight.zig` oferece uma tarefa concorrente que resolve, lê e valida o documento com tamanho limitado, copia o caminho, publica estados atômicos e possui `take` ou cancelamento com cleanup. `document_validated` não é prontidão do Editor. A tarefa ainda não está integrada ao bootstrap/UI, e cancelamento depende dos pontos de I/O; ela não carrega os recursos.
+- Linux local: validação raiz Debug/ReleaseSafe com PATH vazio; Shared **50/50**, Editor **12/12**, Runtime **16/16** e tooling **46/46** em cada modo; integração Python preservada **29/29** em Debug. Teste com exemplo corrompido depois de sucesso detectou falha e passou após restauração. O Editor e seus testes foram apenas cross-compilados para Windows. As alterações desta fatia ainda não rodaram na CI remota.
+
 ## Continuação — streaming e carga do capturador em Zig
 
 - Os testes black-box agora também sincronizam o processo real por arquivo temporário para exigir que o primeiro byte seja transmitido **antes** do término do filho. O probe possui limite próprio; o processo do capturador é terminado e recolhido no cleanup. Outro teste usa arquivo temporário para verificar integralmente 2 MiB intercalados de stdout/stderr e a annotation com tail de 16 KiB, sem aumentar o limite de captura do supervisor.

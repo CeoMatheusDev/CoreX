@@ -29,13 +29,14 @@ Sem `zig` no PATH, no Linux é possível instalar a distribuição fixada sem Py
 
 | Argumento | Editor | Runtime | Regra |
 | --- | --- | --- | --- |
-| `--project <arquivo>` | sim | sim | obrigatório exceto em `--help`; caminho relativo ao CWD ou absoluto, UTF-8, até 4096 bytes |
+| `--project <arquivo>` | sim | sim | obrigatório exceto em `--help`, a menos que o Editor receba `.proj` posicional; caminho relativo ao CWD ou absoluto, UTF-8, até 4096 bytes |
+| `<arquivo.proj>` | sim | não | alternativa posicional para abertura pelo SO; extensão sem distinção de maiúsculas/minúsculas |
 | `--headless` | sim | sim | declara intenção de não usar janela/GPU; nesta fatia não executa simulação |
 | `--validate-only` | sim | sim | valida somente documento/presets/distribuição; autoriza retorno zero nesse escopo |
 | `--check-runtime <executável-absoluto>` | sim | não | exige `--validate-only`; lança filho em validação, não Play |
 | `--help` | sim | sim | deve ser o único argumento; responde com um registro JSON lines e exit 0 |
 
-Até 32 argumentos após argv[0]. Flags repetidas/desconhecidas, valores ausentes e combinações inválidas são erros. Não há sintaxe `--flag=value`, shell expansion, variáveis de ambiente ou comandos de build. Se um nome relativo começa com `--`, usar prefixo `./` para não ser confundido com uma flag. Valores de CLI não regravam o projeto.
+Até 32 argumentos após argv[0]. O Editor aceita somente um projeto, seja posicional ou `--project`; combinar os dois ou informar dois caminhos é erro. Caminhos posicionais iniciados com `-` exigem caminho absoluto ou prefixo `./`. Nenhuma associação do sistema é registrada por este argumento. Flags repetidas/desconhecidas, valores ausentes e combinações inválidas são erros. Não há sintaxe `--flag=value`, shell expansion, variáveis de ambiente ou comandos de build. Se um nome relativo começa com `--`, usar prefixo `./` para não ser confundido com uma flag. Valores de CLI não regravam o projeto.
 
 `--check-runtime` é ação explícita de confiança no binário indicado. Caminho relativo é recusado na supervisão, sem pesquisa de PATH. No Windows o executável deve ter sufixo `.exe`; scripts `.cmd`/`.bat` não são aceitos. Em POSIX, o SO pode interpretar um executável com shebang; a aplicação não o transforma em comando de shell. Não executar programas não confiáveis.
 
@@ -44,6 +45,7 @@ Até 32 argumentos após argv[0]. Flags repetidas/desconhecidas, valores ausente
 ```sh
 runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --validate-only
 editor/zig-out/bin/CoreXEditor --project docs/examples/EmptyGame.proj --headless --validate-only
+editor/zig-out/bin/CoreXEditor exemploproject/Example.proj --headless --validate-only
 
 # O caminho do Runtime deve ser absoluto (substituir /caminho/real/CoreX):
 editor/zig-out/bin/CoreXEditor \
@@ -104,6 +106,8 @@ Em validação de documento, é permitido inspecionar projeto D3D no Linux; a de
 Os builds de aplicações rejeitam macOS, FreeBSD, WASI e demais alvos explicitamente. CI roda no Linux e cross-compila Windows; execução Windows nativa continua P16.
 
 ## Limitações deliberadas
+
+O requisito de abertura por `.proj` e splash 800×600 com carregamento assíncrono está registrado no [ADR-004](ADR-004-project-opening-splash.md). A CLI posicional e a tarefa concorrente de preflight do documento foram implementadas, mas a tarefa ainda não está ligada ao bootstrap, não existe splash e não há associação de arquivo instalada. O [projeto de exemplo](../exemploproject/README.md) ainda não tem cena funcional. Sem `--validate-only`, abrir o `.proj` retorna erro de core indisponível em vez de fingir que o Editor está pronto.
 
 Sem Zigway/ZyntraUI ligados nesta fatia, janela, viewport, cenas/ECS, assets, gameplay, sol2/Lua, fixed timestep, hot reload, gravação atômica ou UI headless. Os adaptadores reais continuam nas pendências do core/aplicações.
 

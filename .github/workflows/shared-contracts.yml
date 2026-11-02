@@ -2,9 +2,9 @@ name: Application contracts and bootstraps
 
 on:
   push:
-    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', '.github/workflows/**']
+    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', '.github/workflows/**']
   pull_request:
-    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', '.github/workflows/**']
+    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', '.github/workflows/**']
   workflow_dispatch:
 
 permissions:
