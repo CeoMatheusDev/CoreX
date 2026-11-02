@@ -54,6 +54,7 @@ CoreX/
 │   ├── README.md
 │   ├── src/main.zig               # entrada com process.Init; bootstrap kind=runtime
 │   ├── src/application.zig        # [planejado] carga/fixed timestep/interpolação/core jobs
+│   ├── src/timing.zig             # [atual] contabilidade isolada de ticks, sem loop
 │   ├── src/gameplay_host.zig      # [planejado] ABI C e VM Lua única via gameplay_api
 │   └── tests/                     # [planejado] replay, simulação headless e carga real
 ├── include/engine_api.h           # [planejado] API pública única do core; não é o DTO privado

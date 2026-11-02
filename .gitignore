@@ -3,3 +3,6 @@ zig-pkg/
 zig-out/
 *.swp
 *.tmp
+
+.venv/
+.cache/

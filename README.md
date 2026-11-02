@@ -16,26 +16,25 @@ ADR e schemas aprovados. Contratos em [`shared/`](shared/README.md) e bootstraps
 
 As seções abaixo registram o estado histórico do core, não evidência de build/renderer nesta sessão. O build legado apresentou falha de resolução dos pacotes; consulte o relatório atual antes de assumir compilação limpa ou recursos gráficos funcionais.
 
-## Status — Base Compilável (Fase 1 completa + evolução incremental)
+## Core legado — build e testes de fumaça
 
-- Zigway v0.1.0-alpha.4 integrados (hash verificado)
-- ZyntraUI v1.44.1 integrados (hash verificado)
-- ECS (`ecs/`), Memory (`memory/`), Job System (`jobs/`), Events (`events/`), Scripting Lua (`scripting/`)
-- Renderer próprio (`graphics/renderer/`), Backend Null, Graphics Abstraction
-- Audio (`audio/`), Animation (`animation/`), Scene (`scene/`)
-- Serialization (`serialization/`), Assets (`assets/`), Profiler (`profiler/`)
-- Documentação arquitetural (`docs/ARCHITECTURE.md`)
-- Testes por subsistema (`tests/*/test_basics.zig`) + integração (`tests/integration/`)
-- `zig build` limpo; executável `CoreXEngine` funcional
+O executável legado é uma demonstração independente, não o Editor/Runtime novo. Seu loader retorna uma configuração fixa, o backend gráfico é null e subsistemas como assets ainda contêm stubs; a saída do programa não comprova carregamento de projeto, GPU ou execução de jogo.
 
-## Uso
+Para reproduzir no Linux com Python e desenvolvimento X11 instalado (por exemplo, `libx11-dev` no Ubuntu):
 
 ```bash
-zig build
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install --require-hashes --only-binary=:all: -r tools/zig-requirements.txt
+python tools/test_prepare_legacy_deps.py
+python tools/prepare_legacy_deps.py
+python -m ziglang build
+python -m ziglang build test --summary all
+python -m ziglang build test -Doptimize=ReleaseSafe --summary all
 ./zig-out/bin/CoreXEngine
 ```
 
-O executável carrega a configuração do projeto e inicia o runtime.
+O preparador baixa os arquivos das versões fixadas, confere o SHA-256 dos arquivos e o hash de pacote Zig declarado no manifesto e inicializa o cache a partir dos diretórios extraídos. É uma solução alternativa para o cache de tarballs com pasta extra observado no Zig 0.17.0; não altera o manifesto ou os pacotes upstream. Para uso offline, forneça `--archive-dir` com `zigway.tar.gz` e `zyntra_ui.tar.gz` correspondentes às versões fixadas. A suíte legada cobre lifecycle, IDs, fila sequencial de jobs, Event Bus síncrono limitado e renderer null, além de regressões de FIFO, reentrada e falhas de alocação; não executa todos os arquivos históricos em `tests/`. A fila e o [Event Bus](docs/EVENT_BUS.md) não são paralelos nem thread-safe, e não estão integrados ao Runtime. A CI adicionada para essa fatia ainda depende de execução remota.
 
 ## Integração de Melhorias Recentes
 

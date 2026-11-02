@@ -14,7 +14,9 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
     b.getInstallStep().dependOn(&b.addInstallFile(shared.path("fixtures/presets.zon"), "share/corex/presets.zon").step);
     b.getInstallStep().dependOn(&b.addInstallFile(shared.path("fixtures/distribution.json"), "share/corex/distribution.json").step);
-    b.step("check", "Compile the bootstrap without executing it").dependOn(&exe.step);
+    const check = b.step("check", "Compile the bootstrap and tests without executing them");
+    check.dependOn(&exe.step);
     const tests = b.addTest(.{ .root_module = mod });
-    b.step("test", "Check application imports (integration tests run separately)").dependOn(&b.addRunArtifact(tests).step);
+    check.dependOn(&tests.step);
+    b.step("test", "Test runtime models (integration tests run separately)").dependOn(&b.addRunArtifact(tests).step);
 }

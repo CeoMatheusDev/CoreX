@@ -16,8 +16,9 @@ pub fn main() !void {
     var jsys = try JobSystem.init(allocator);
     defer jsys.deinit();
 
-    var bus = EventBus.init(allocator);
-    bus.publish(.{ .id = 1, .payload = "integration" });
+    var bus = try EventBus.init(allocator, 8);
+    defer bus.deinit() catch unreachable;
+    try bus.publish(.{ .id = 1, .payload = "integration" });
 
     std.debug.print("Pipeline integração OK — ECS:{d}, Renderer, Job, Event\n", .{e});
 }
