@@ -26,9 +26,9 @@
 
 Comandos executados e resultados:
 
-\`\`\`text
+```text
 <!-- Cole os comandos e resultados resumidos. -->
-\`\`\`
+```
 
 Plataformas efetivamente testadas:
 
