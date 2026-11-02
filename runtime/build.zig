@@ -12,8 +12,9 @@ pub fn build(b: *std.Build) void {
     mod.addImport("corex_app", shared.module("corex_app"));
     const exe = b.addExecutable(.{ .name = "CoreXRuntime", .root_module = mod });
     b.installArtifact(exe);
+    const manifest = shared.namedWriteFiles("corex_distribution").getDirectory().path(b, "distribution.json");
     b.getInstallStep().dependOn(&b.addInstallFile(shared.path("fixtures/presets.zon"), "share/corex/presets.zon").step);
-    b.getInstallStep().dependOn(&b.addInstallFile(shared.path("fixtures/distribution.json"), "share/corex/distribution.json").step);
+    b.getInstallStep().dependOn(&b.addInstallFile(manifest, "share/corex/distribution.json").step);
     const check = b.step("check", "Compile the bootstrap and tests without executing them");
     check.dependOn(&exe.step);
     const tests = b.addTest(.{ .root_module = mod });

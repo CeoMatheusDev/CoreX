@@ -22,7 +22,7 @@ def main() -> None:
         raise SystemExit("Versão do exemplo v2 divergiu do schema")
     if v2_schema["properties"]["engine"]["properties"]["graphics_backend"]["enum"] != ["vulkan", "opengl", "d3d11", "d3d12"]:
         raise SystemExit("Backends v2 divergiram do ADR-003")
-    manifest = json.loads((root / "shared/fixtures/distribution.json").read_text(encoding="utf-8"))
+    manifest = json.loads((root / "shared/fixtures/distribution.template.json").read_text(encoding="utf-8"))
     table = (root / "shared/fixtures/presets.zon").read_bytes()
     if hashlib.sha256(table).hexdigest() != manifest["presets_sha256"]:
         raise SystemExit("SHA-256 da tabela divergiu do manifesto empacotado")

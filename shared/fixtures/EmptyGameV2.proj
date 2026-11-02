@@ -7,7 +7,7 @@
     "created_at": "2026-11-01T12:00:00Z"
   },
   "engine": {
-    "version": "0.1.0",
+    "version": "0.1.0-alpha.1",
     "graphics_backend": "vulkan"
   },
   "renderer": {

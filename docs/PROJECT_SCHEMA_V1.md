@@ -11,7 +11,7 @@
 - Exemplo completo sem gameplay: [EmptyGame.proj](examples/EmptyGame.proj).
 - Este documento define validações semânticas e limites que JSON Schema não expressa. **As duas partes são normativas**. Passar em um validador JSON Schema isolado não significa que o projeto possa executar.
 
-O exemplo é fixture documental: não inclui `Main.scene`, assets, pastas, módulos compilados nem uma engine instalada. A versão `0.1.0` ilustra sintaxe, não comprova disponibilidade de um core compatível.
+O exemplo é fixture documental: não inclui `Main.scene`, assets, pastas, módulos compilados nem uma engine instalada. Seu requisito `0.1.0-alpha.1` deriva da identidade de desenvolvimento `0.1.0a1` em `VERSION`; ele ilustra o campo SemVer, mas não comprova disponibilidade de uma distribuição ou de um core compatível.
 
 ### Justificativas complementares ao ADR
 
@@ -81,7 +81,7 @@ Não reutilizar UUID ao criar um novo projeto por cópia explícita/template. Fa
 | `version` | string SemVer | sim | identidade exata da distribuição exigida; sem intervalos, `latest` ou curingas |
 | `graphics_backend` | enum | sim | `vulkan`, `webgpu`, `d3d12`, `metal` |
 
-Comparação de versão da engine é identidade exata, inclusive prerelease/build metadata; não apenas precedência SemVer. ABI é negociada adicionalmente em runtime, não inferida do número. A distribuição fixa versões/hashes de core, presets e dependências em seu manifesto; o `.proj` não permite trocar isoladamente sua tabela de presets.
+`engine.version` continua sendo uma string SemVer por contrato do schema aprovado. O manifesto gerado inclui o produto `MAJOR.MINOR.PATCH{a|b|f|p}N` e o `project_engine_version` SemVer derivado para esse campo. Igualdade com esse token resulta em `same_version`; outra versão só resulta em `compatible` se estiver enumerada exatamente em `compatible_project_engine_versions`; do contrário é incompatível. Hash válido não substitui essa decisão. ABI é negociada adicionalmente em runtime, não inferida do número. O `.proj` não permite trocar isoladamente sua tabela de presets. Detalhes: `VERSIONING.md`.
 
 Aceitar um nome de backend no schema não afirma que existe implementação na engine/SO atual. Falta de versão, ABI ou backend é erro explícito de compatibilidade/capacidade. Headless exige versão/core de simulação compatíveis, mas não exige GPU nem disponibilidade do backend gráfico pretendido.
 
@@ -250,7 +250,9 @@ Os identificadores seguintes são proposta de categorias estáveis para `fields.
 | `project.invalid_path` | `../assets`, caminho absoluto, caixa errada ou symlink externo |
 | `project.invalid_configuration` | sombra além da distância de draw após merge |
 | `project.resource_missing` | cena, raiz, entrypoint ou módulo ausente |
-| `project.engine_mismatch` | distribuição/ABI diferente da exigida |
+| `project.engine_incompatible` | versão SemVer do projeto não é a identidade da distribuição nem uma entrada explícita da allow-list |
+| `distribution.manifest_corrupted` | bytes do manifesto instalado diferem da identidade compilada |
+| `distribution.invalid` | manifesto válido, mas tabela/hash/contratos ausentes ou inconsistentes |
 | `project.graphics_unsupported` | backend ou configuração indisponível no modo gráfico |
 | `project.write_conflict` | arquivo alterado externamente desde a leitura |
 | `project.write_failed` | permissão, sync ou replace falhou; original não é descartado |

@@ -6,6 +6,7 @@ pub const Options = struct {
     headless: bool = false,
     validate_only: bool = false,
     help: bool = false,
+    version: bool = false,
     check_runtime: ?[]const u8 = null,
 };
 pub const Error = error{ TooManyArguments, UnknownArgument, DuplicateArgument, MissingValue, MissingProject, InvalidPathArgument, InvalidCombination };
@@ -45,9 +46,12 @@ pub fn parse(kind: Kind, args: []const []const u8) Error!Options {
         } else if (std.mem.eql(u8, arg, "--help")) {
             if (o.help) return error.DuplicateArgument;
             o.help = true;
+        } else if (std.mem.eql(u8, arg, "--version")) {
+            if (o.version) return error.DuplicateArgument;
+            o.version = true;
         } else return error.UnknownArgument;
     }
-    if (o.help) {
+    if (o.help or o.version) {
         if (args.len != 1) return error.InvalidCombination;
         return o;
     }
@@ -73,6 +77,9 @@ test "CLI rejects unknown duplicate missing and conflicting arguments" {
     try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--project", "a", "--check-runtime", "/bin/player" }));
     try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--help", "--project", "a" }));
     try std.testing.expect((try parse(.editor, &.{"--help"})).help);
+    try std.testing.expect((try parse(.runtime, &.{"--version"})).version);
+    try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--version", "--project", "a" }));
+    try std.testing.expectError(error.DuplicateArgument, parse(.editor, &.{ "--version", "--version" }));
 }
 
 test "editor accepts a single positional project for desktop file opening" {

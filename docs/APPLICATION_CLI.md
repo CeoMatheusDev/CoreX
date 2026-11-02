@@ -29,7 +29,8 @@ Sem `zig` no PATH, no Linux é possível instalar a distribuição fixada sem Py
 
 | Argumento | Editor | Runtime | Regra |
 | --- | --- | --- | --- |
-| `--project <arquivo>` | sim | sim | obrigatório exceto em `--help`, a menos que o Editor receba `.proj` posicional; caminho relativo ao CWD ou absoluto, UTF-8, até 4096 bytes |
+| `--version` | sim | sim | único argumento; emite identidade de produto embutida no binário e sai sem projeto/distribuição |
+| `--project <arquivo>` | sim | sim | obrigatório exceto em `--help`/`--version`, a menos que o Editor receba `.proj` posicional; caminho relativo ao CWD ou absoluto, UTF-8, até 4096 bytes |
 | `<arquivo.proj>` | sim | não | alternativa posicional para abertura pelo SO; extensão sem distinção de maiúsculas/minúsculas |
 | `--headless` | sim | sim | declara intenção de não usar janela/GPU; nesta fatia não executa simulação |
 | `--validate-only` | sim | sim | valida somente documento/presets/distribuição; autoriza retorno zero nesse escopo |
@@ -75,14 +76,17 @@ Todos os registros oficiais seguem o envelope JSON lines v1 do ADR-001. Timestam
 
 Eventos principais:
 
+- `application.version`: identidade de produto compilada (`engine_version`) e token SemVer do `.proj`; `core_abi_checked=false`.
 - `application.starting`: intenção/mode, com `core_linked=false`.
 - `project.document_validated`: schema/metadados validados; **não** resolução segura de recursos.
+- `project.engine_compatibility`: classifica `same_version` ou uma compatibilidade exata autorizada pela allow-list do manifesto; incompatibilidade gera `project.engine_incompatible`.
+- `distribution.manifest_corrupted` / `distribution.invalid`: bytes do manifesto divergentes versus tabela/hash/contratos inválidos ou ausentes.
 - `graphics.config_resolved`: 27 valores concretos, overrides e identidade de tabela; `gpu_created=false`, `capabilities_checked=false`.
 - `editor.validation_complete` / `runtime.validation_complete`: escopo `document_and_presets`, fingerprint e flags explícitas de serviços ainda não carregados.
 - `runtime.check_starting` / `runtime.output` / `runtime.output_invalid` / `runtime.check_complete` / `runtime.check_failed`: supervisão pelo Editor. Os registros do filho ficam aninhados em `fields.record`, preservando origem/sessão/seq originais.
 - `application.core_unavailable`: erro em execução real solicitada antes da integração do core.
 
-O fingerprint v2 inclui o perfil `desktop-3d-canvas-v1`, além de o modelo normalizado completo do `.proj`, parâmetros gráficos resolvidos e manifesto empacotado. Não inclui relógio, PID, sessão ou CWD. Não é assinatura/autenticação, hash de assets ou comprovação de determinismo da simulação. Um `.proj` equivalente em defaults opcionais produz a mesma identidade; um projeto com configuração/seed diferente não deve confirmá-la.
+O fingerprint v3 inclui o perfil `desktop-3d-canvas-v1`, além do modelo normalizado completo do `.proj`, parâmetros gráficos resolvidos e manifesto validado/empacotado. Não inclui relógio, PID, sessão ou CWD. Não é assinatura/autenticação, hash de assets ou comprovação de determinismo da simulação. Um `.proj` equivalente em defaults opcionais produz a mesma identidade; um projeto com configuração/seed diferente não deve confirmá-la.
 
 ### Limites da captura
 

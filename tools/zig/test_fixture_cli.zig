@@ -7,11 +7,11 @@ const Io = std.Io;
 const a = std.testing.allocator;
 const io = std.testing.io;
 const paths = [_][]const u8{
-    "docs/examples/EmptyGame.proj",        "shared/fixtures/EmptyGame.proj",
-    "docs/examples/EmptyGameV2.proj",      "shared/fixtures/EmptyGameV2.proj",
-    "docs/examples/presets.zon",           "shared/fixtures/presets.zon",
-    "docs/schemas/project-v1.schema.json", "docs/schemas/project-v2.schema.json",
-    "shared/fixtures/distribution.json",
+    "docs/examples/EmptyGame.proj",               "shared/fixtures/EmptyGame.proj",
+    "docs/examples/EmptyGameV2.proj",             "shared/fixtures/EmptyGameV2.proj",
+    "docs/examples/presets.zon",                  "shared/fixtures/presets.zon",
+    "docs/schemas/project-v1.schema.json",        "docs/schemas/project-v2.schema.json",
+    "shared/fixtures/distribution.template.json",
 };
 const schema2_head = "{\"properties\":{\"schema_version\":{\"const\":2},\"engine\":{\"properties\":{\"graphics_backend\":{\"enum\":";
 const schema2_tail = "}}}}}";

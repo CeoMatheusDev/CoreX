@@ -14,6 +14,9 @@ ADR e schemas aprovados. Contratos em [`shared/`](shared/README.md) e bootstraps
 - [Migração para desenvolvimento sem Python](docs/PYTHON_REMOVAL.md)
 - [Contrato `.proj` v1](docs/PROJECT_SCHEMA_V1.md)
 - [Contrato `presets.zon` v1](docs/PRESETS_SCHEMA_V1.md)
+- [Política de versionamento de produto e releases](VERSIONING.md)
+- [CLI Zig de version/release](versioning/README.md)
+- [Changelog](CHANGELOG.md)
 
 As seções abaixo descrevem o core legado, não evidência de recursos gráficos funcionais. A preparação atual das dependências contorna falhas de resolução de pacotes; consulte o relatório de progresso para resultados e limites.
 

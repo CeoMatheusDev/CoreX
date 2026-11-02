@@ -61,4 +61,4 @@ CoreX/
 
 Documentado por: Assistente de Desenvolvimento
 Data: 2026-11-01
-Versão: 0.1.0 (Fase 1 completa)
+Marco da fase: Fase 1 completa (o antigo `0.1.0` nesta linha não é versão nem release de produto; a autoridade atual é [`../VERSION`](../VERSION)).

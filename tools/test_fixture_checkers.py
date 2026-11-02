@@ -23,7 +23,7 @@ PATHS = (
     "shared/fixtures/presets.zon",
     "docs/schemas/project-v1.schema.json",
     "docs/schemas/project-v2.schema.json",
-    "shared/fixtures/distribution.json",
+    "shared/fixtures/distribution.template.json",
 )
 CHECKER = None
 

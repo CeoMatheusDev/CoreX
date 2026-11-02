@@ -1,6 +1,6 @@
 # CoreX — contratos compartilhados de aplicação
 
-**Implementado nesta etapa:** módulo Zig 0.17.0 reutilizável de documentos `.proj` v1/v2, presets e DTO interno Zig↔C23. Agora é consumido pelos bootstraps independentes em `editor/` e `runtime/`, que validam documentos e não executam o jogo/UI. Não depende de janela, GPU, Lua ou dos builds legados.
+**Implementado:** módulo Zig 0.17.0 reutilizável de documentos `.proj` v1/v2, presets, DTO interno Zig↔C23 e identidade de produto CoreX injetada do `VERSION` raiz. Agora é consumido pelos bootstraps independentes em `editor/` e `runtime/`, que validam documentos e não executam o jogo/UI. Não depende de janela, GPU, Lua ou dos builds legados. A versão de produto, SemVer dos pacotes, schema `.proj`, ABI e toolchain permanecem domínios separados.
 
 ## Build e testes
 
@@ -84,9 +84,9 @@ O DTO usa membros de 4 bytes e tem 116 bytes no v1, sem packing. A escolha custa
 
 ## Cobertura e limites atuais
 
-49 testes compartilhados em Linux; resultados por modo em `docs/APPLICATION_PROGRESS.md`. Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, erros de versão, exatidão decimal, ownership, limites, 256 mutações determinísticas e falhas de alocação injetadas. Também exercitam a ABI C23 real.
+56 testes compartilhados em Linux após a adoção do versionamento. Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, exatidão decimal, ownership, limites, 256 mutações determinísticas, falhas de alocação injetadas, identidade/compatibilidade do manifesto e parser/comparador/transições da versão de produto. Também exercitam a ABI C23 real. Resultados por modo estão em `docs/APPLICATION_PROGRESS.md`.
 
-Os testes Zig Editor→Runtime continuam sendo round-trip em memória. Adicionalmente, `tools/test_bootstrap.py` testa os **dois executáveis em processos reais**, apenas no escopo de validação. São 29 testes de integração locais, incluindo supervisão e JSON lines. Play de jogo, snapshots ZyntraUI e GPU real continuam não implementados.
+Os testes Zig Editor→Runtime continuam sendo round-trip em memória. Adicionalmente, `tools/test_bootstrap.py` testa os **dois executáveis em processos reais**, apenas no escopo de validação. São 30 testes de integração locais, incluindo identidade de produto, supervisão e JSON lines. Play de jogo, snapshots ZyntraUI e GPU real continuam não implementados.
 
 Limitações explícitas:
 
@@ -103,8 +103,9 @@ Contratos aprovados: `docs/PROJECT_SCHEMA_V1.md`, `docs/PRESETS_SCHEMA_V1.md`. E
 - `cli.zig`: argumentos estritos compartilhados e modos explícitos.
 - `logging.zig`: encoder fixo de JSON lines e sink síncrono de bootstrap, não logger de frame.
 - `jsonl.zig`: enquadramento incremental, limites e validação do envelope recebido.
-- `distribution.zig`: recursos instalados relativos ao executável; manifesto fixado no build e SHA-256 da tabela.
-- `fingerprint.zig`: identidade dos valores normalizados completos, sem sessão/relógio/CWD.
+- `product_version.zig` / `engine_identity.zig`: gramática tipada do produto e identidade compilada a partir do `VERSION` raiz.
+- `distribution.zig`: manifesto gerado no build, compatibilidade Editor/Runtime por identidade exata ou allow-list e SHA-256 da tabela.
+- `fingerprint.zig`: identidade dos valores normalizados completos, sem sessão/relógio/CWD; fingerprint v3 inclui o manifesto ampliado.
 - `bootstrap.zig`: orquestração comum para duas entradas separadas, sem core/renderer fictícios.
 - `platform_ext/process.zig` + `process_native.c/.h`: captura simultânea limitada dos pipes, prazo e propriedade/reap do filho imediato. `runCommand` também atende tooling com executável absoluto, argv e cwd explícitos; não usa shell nem supervisiona descendentes. Diferenças POSIX/Windows isoladas. Esse módulo C privado também é compilado com `-std=c23`.
 
@@ -112,4 +113,4 @@ CLI, códigos de saída, exemplos e restrições: `docs/APPLICATION_CLI.md`. Dec
 
 ## Perfil desktop e schema v2
 
-`scope.zig` centraliza a elegibilidade por SO, distinta de capacidade/implementação GPU. `project.zig` mantém compatibilidade v1 e valida v2 (Vulkan/OpenGL/D3D11/D3D12). `fingerprint.zig` agora usa versão 2 e inclui `desktop-3d-canvas-v1`. Não há modo de cena 2D, Metal/WebGPU executáveis ou suporte de produto macOS. Decisões e matriz: ADR-003; contrato: PROJECT_SCHEMA_V2.md.
+`scope.zig` centraliza a elegibilidade por SO, distinta de capacidade/implementação GPU. `project.zig` mantém compatibilidade v1 e valida v2 (Vulkan/OpenGL/D3D11/D3D12). `fingerprint.zig` usa versão 3 e inclui `desktop-3d-canvas-v1` mais o manifesto validado ampliado. Não há modo de cena 2D, Metal/WebGPU executáveis ou suporte de produto macOS. Decisões e matriz: ADR-003; contrato: PROJECT_SCHEMA_V2.md.

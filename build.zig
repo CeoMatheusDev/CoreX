@@ -1,8 +1,13 @@
 const std = @import("std");
+const build_identity = @import("shared/build_identity.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const identity = build_identity.load(b, "VERSION");
+    const identity_options = b.addOptions();
+    identity_options.addOption([]const u8, "engine_version", identity.product_string);
+    identity_options.addOption([]const u8, "project_engine_version", identity.project_requirement);
 
     // `check` is deliberately compile-only for cross-target CI. Native
     // project validation gets a separate entry point and never runs a
@@ -65,13 +70,20 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const product_version_module = b.createModule(.{
+        .root_source_file = b.path("shared/product_version.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    root_module.addImport("corex_product_version", product_version_module);
     root_module.addImport("zigway", zigway_dep.module("zigway"));
     root_module.addImport("zyntra_ui", zyntra_dep.module("zyntra_ui"));
+    root_module.addOptions("build_options", identity_options);
 
     const exe = b.addExecutable(.{
         .name = "CoreXEngine",
@@ -85,8 +97,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    test_module.addImport("corex_product_version", product_version_module);
     test_module.addImport("zigway", zigway_dep.module("zigway"));
     test_module.addImport("zyntra_ui", zyntra_dep.module("zyntra_ui"));
+    test_module.addOptions("build_options", identity_options);
     const unit_tests = b.addTest(.{
         .root_module = test_module,
     });

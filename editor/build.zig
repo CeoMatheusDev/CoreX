@@ -16,12 +16,13 @@ pub fn build(b: *std.Build) void {
     mod.addOptions("preflight_options", preflight_options);
     const exe = b.addExecutable(.{ .name = "CoreXEditor", .root_module = mod });
     b.installArtifact(exe);
+    const manifest = shared.namedWriteFiles("corex_distribution").getDirectory().path(b, "distribution.json");
     b.getInstallStep().dependOn(&b.addInstallFile(shared.path("fixtures/presets.zon"), "share/corex/presets.zon").step);
-    b.getInstallStep().dependOn(&b.addInstallFile(shared.path("fixtures/distribution.json"), "share/corex/distribution.json").step);
+    b.getInstallStep().dependOn(&b.addInstallFile(manifest, "share/corex/distribution.json").step);
     const opts = b.addOptions();
     opts.addOptionPath("editor", exe.getEmittedBin());
     opts.addOptionPath("presets", shared.path("fixtures/presets.zon"));
-    opts.addOptionPath("manifest", shared.path("fixtures/distribution.json"));
+    opts.addOptionPath("manifest", manifest);
     opts.addOption([]const u8, "repository_root", repository_root);
     const launch_mod = b.createModule(.{ .root_source_file = b.path("src/test_project_open.zig"), .target = target, .optimize = optimize });
     launch_mod.addImport("corex_app", shared.module("corex_app"));

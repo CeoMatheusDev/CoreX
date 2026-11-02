@@ -11,7 +11,7 @@ pub fn compute(p: project.Project, parameters: presets.Parameters, manifest: dis
     var buffer: [32 * 1024]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
     std.json.Stringify.value(.{
-        .fingerprint_version = @as(u32, 2),
+        .fingerprint_version = @as(u32, 3),
         .application_profile = @import("scope.zig").profile_id,
         .project = p,
         .parameters = parameters,

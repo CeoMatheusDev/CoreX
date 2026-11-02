@@ -1,5 +1,19 @@
 # Ferramentas Zig
 
+## Versionamento de produto e release check
+
+`zig build` instala `corex-version` junto às outras ferramentas nativas. Na raiz do repositório:
+
+```sh
+(cd tools/zig && zig build)
+tools/zig/zig-out/bin/corex-version version
+tools/zig/zig-out/bin/corex-version compare 0.1.0a1 0.1.0b1
+tools/zig/zig-out/bin/corex-version bump beta --dry-run
+tools/zig/zig-out/bin/corex-version release check
+```
+
+O bump real altera somente `VERSION`; o release check verifica a identidade compilada, o manifesto gerado e a tabela de presets. Nenhum comando cria tag, commit ou release. Política completa: [`VERSIONING.md`](../../VERSIONING.md).
+
 ## Validação nativa do tooling
 
 Com Zig 0.17.0 disponível, em `tools/zig` execute `zig build validate -j2 --summary all`. O passo roda os testes do tooling e valida fixtures e as seis recusas de alvos com executáveis nativos; não exige a preparação dos pacotes legados. `validate-fixtures` e `validate-targets` podem ser executados individualmente. Os passos de validação rejeitam `-Dtarget` e `-Dcpu` customizados; `zig build check -Dtarget=x86_64-windows-gnu` permanece compilação cruzada sem execução.
