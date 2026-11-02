@@ -55,6 +55,8 @@ Ela reutiliza o supervisor de subprocessos de `shared/`, sem shell para os coman
 
 A verificação de alvos na CI usa apenas esta ferramenta Zig; o script Python correspondente foi removido após o teste em paralelo e a adição de regressões automatizadas. Python permanece necessário para outras ferramentas e testes na CI atual. O build dessas ferramentas usa o pacote `shared` e suas fontes C23; não foi introduzida uma nova dependência de janela/GPU ou uma distribuição alternativa de Zig. Windows foi apenas cross-compilado, sem execução nativa desta ferramenta.
 
-## Capturador experimental de CI
+## Capturador de CI (Linux)
 
-`corex-ci-capture` é um protótipo Linux para substituir gradualmente o capturador Python, mas não é usado para executar as etapas da CI. Consulte `tools/CI_CAPTURE.md` para contrato, testes e limitações. Windows ainda não está implementado para este capturador; cross-compilar o stub não é suporte nativo.
+`corex-ci-capture` é uma implementação Linux usada pelo workflow de contratos nesta alteração para substituir gradualmente o capturador Python. O workflow alterado ainda precisa de validação remota. Consulte `tools/CI_CAPTURE.md` para contrato, testes e limitações. Windows ainda não está implementado para este capturador; cross-compilar o stub não é suporte nativo.
+
+`zig build test-capture-cli` compila o capturador e executa nove testes black-box nativos Linux, sem Python; também fazem parte de `zig build test` e `zig build validate` e são executados novamente em cada invocação. O passo dedicado rejeita cross-targets e hosts não Linux; `check` apenas compila os testes em cross. Usam `/bin/sh`, `/bin/sleep` e `/proc` Linux para os probes e verificação de cleanup. A suíte cobre somente parte dos casos da referência Python, que continua obrigatória na CI durante a transição.

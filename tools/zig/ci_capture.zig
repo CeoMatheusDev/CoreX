@@ -1,4 +1,4 @@
-//! Experimental Linux CI log capture. This is not an application logger.
+//! Linux CI log capture. This is not an application logger.
 //! stdout and stderr share one pipe; only the immediate child is owned.
 const std = @import("std");
 const builtin = @import("builtin");

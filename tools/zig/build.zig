@@ -10,6 +10,15 @@ fn fixtureCliTest(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     return b.addTest(.{ .root_module = module });
 }
 
+fn captureCliTest(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.Optimize, capture_exe: *std.Build.Step.Compile, shared_module: *std.Build.Module) *std.Build.Step.Compile {
+    const opts = b.addOptions();
+    opts.addOptionPath("capture", capture_exe.getEmittedBin());
+    const module = b.createModule(.{ .root_source_file = b.path("test_capture_cli.zig"), .target = target, .optimize = optimize });
+    module.addOptions("capture_cli_options", opts);
+    module.addImport("corex_app", shared_module);
+    return b.addTest(.{ .root_module = module });
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -29,13 +38,14 @@ pub fn build(b: *std.Build) void {
     const capture_exe = b.addExecutable(.{ .name = "corex-ci-capture", .root_module = capture_module });
     b.installArtifact(capture_exe);
     const capture_tests = b.addTest(.{ .root_module = capture_module });
+    const capture_cli_tests = captureCliTest(b, target, optimize, capture_exe, shared.module("corex_app"));
     const extractor_module = b.createModule(.{ .root_source_file = b.path("extract_legacy_deps.zig"), .target = target, .optimize = optimize });
     const extractor_exe = b.addExecutable(.{ .name = "corex-extract-legacy", .root_module = extractor_module });
     b.installArtifact(extractor_exe);
     const extractor_tests = b.addTest(.{ .root_module = extractor_module });
     const install_extractor = b.step("install-extractor", "Install only the pinned legacy archive extractor");
     install_extractor.dependOn(&b.addInstallArtifact(extractor_exe, .{}).step);
-    const run_tests = b.step("test", "Run tooling unit tests");
+    const run_tests = b.step("test", "Run tooling unit and black-box tests");
     run_tests.dependOn(&b.addRunArtifact(checker_tests).step);
     run_tests.dependOn(&b.addRunArtifact(fixture_tests).step);
     const run_fixture_cli_tests = b.addRunArtifact(fixture_cli_tests);
@@ -49,6 +59,17 @@ pub fn build(b: *std.Build) void {
         fixture_cli_step.dependOn(&b.addFail("test-fixture-cli is native-only; omit -Dtarget and -Dcpu").step);
     }
     run_tests.dependOn(&b.addRunArtifact(capture_tests).step);
+    const run_capture_cli = b.addRunArtifact(capture_cli_tests);
+    run_capture_cli.has_side_effects = true;
+    run_tests.dependOn(&run_capture_cli.step);
+    const capture_cli_step = b.step("test-capture-cli", "Run black-box tests of the native CI capture executable");
+    if (!target.query.isNative()) {
+        capture_cli_step.dependOn(&b.addFail("test-capture-cli is native-only; omit -Dtarget and -Dcpu").step);
+    } else if (target.result.os.tag != .linux) {
+        capture_cli_step.dependOn(&b.addFail("test-capture-cli requires a native Linux host").step);
+    } else {
+        capture_cli_step.dependOn(&run_capture_cli.step);
+    }
     run_tests.dependOn(&b.addRunArtifact(extractor_tests).step);
     // Runtime validation executes host binaries and rejects custom targets.
     // The existing `check` remains compile-only for cross-target builds.
@@ -90,6 +111,11 @@ pub fn build(b: *std.Build) void {
         run_cli.setCwd(b.path("."));
         run_cli.has_side_effects = true;
         validate.dependOn(&run_cli.step);
+        const host_capture_exe = b.addExecutable(.{ .name = "corex-ci-capture-host", .root_module = host_capture });
+        const host_capture_cli = captureCliTest(b, host, optimize, host_capture_exe, host_shared.module("corex_app"));
+        const run_host_capture_cli = b.addRunArtifact(host_capture_cli);
+        run_host_capture_cli.has_side_effects = true;
+        validate.dependOn(&run_host_capture_cli.step);
         for ([_]*std.Build.Module{ host_checker, host_fixtures, host_capture, host_extractor }) |module| {
             const run_host_tests = b.addRunArtifact(b.addTest(.{ .root_module = module }));
             run_host_tests.has_side_effects = true;
@@ -104,6 +130,7 @@ pub fn build(b: *std.Build) void {
     check.dependOn(&fixture_cli_tests.step);
     check.dependOn(&capture_exe.step);
     check.dependOn(&capture_tests.step);
+    check.dependOn(&capture_cli_tests.step);
     check.dependOn(&extractor_exe.step);
     check.dependOn(&extractor_tests.step);
 }
