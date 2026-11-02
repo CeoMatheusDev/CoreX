@@ -1,78 +1,93 @@
+> **Perfil atual:** ADR-003: Windows/Linux, 3D e UI/Canvas. macOS e cena 2D fora do produto.
+
 # Aplicações — estrutura e plano de implementação
 
-ADR-001 e schemas `.proj`/presets aprovados pelo usuário em 2026-11-01.
+ADR-001 e schemas `.proj`/presets aprovados pelo usuário em 2026-11-01. Detalhes do bootstrap executável: ADR-002. `[atual]` significa arquivo existente; `[planejado]` não significa recurso funcional.
 
-## Árvore-alvo (item 4)
-
-`[atual]` indica arquivos entregues nesta etapa; `[planejado]` não indica funcionalidade existente.
+## Árvore de aplicações (item 4)
 
 ```text
 CoreX/
-├── build.zig / build.zig.zon       # [existente] build legado; preservar até migração
-├── src/                           # [existente] biblioteca core; não reimplementar nas aplicações
-├── shared/                        # [atual] pacote independente de contratos de aplicação
-│   ├── build.zig                  # build/testes sem Zigway/GPU/Lua
-│   ├── build.zig.zon              # pacote local sem dependências externas
-│   ├── root.zig / README.md       # exports e instruções de uso
-│   ├── contract_tests.zig         # testes do contrato aprovado
-│   ├── project.zig                # modelo, parser fechado, ownership e serializer JSON
-│   ├── validation.zig             # metadados, decimal exato, caminhos lexicais
-│   ├── limits.zig                 # preflight limitado JSON/ZON
-│   ├── presets.zig                # tabela ZON, resolução/validação de parâmetros
-│   ├── fixtures/                  # dados aprovados sincronizados com docs/examples
-│   │   ├── EmptyGame.proj
-│   │   └── presets.zon
-│   ├── graphics_abi.zig / .h / .c # [atual] DTO privado Zig/C23 e validação de fronteira
-│   ├── logging.zig               # [planejado] envelope JSON lines com buffers limitados
-│   ├── cli.zig                   # [planejado] --project, --headless e limites de CI
-│   ├── platform_ext/             # [planejado] processo/atomic replace/dynamic library por SO
-│   └── core_adapter/             # [planejado] tradução para serviços reais da biblioteca core
-├── editor/                       # [planejado] pacote independente; não criado nesta etapa
-│   ├── build.zig / build.zig.zon  # Zigway + ZyntraUI + shared + core
+├── build.zig / build.zig.zon       # [existente] build legado; sem migração de core nesta fatia
+├── src/                           # [existente] biblioteca core; não duplicar em aplicações
+├── .gitattributes                 # [atual] LF estável para fontes/fixtures e hashes
+├── shared/                        # [atual] pacote independente de contratos/bootstrap
+│   ├── build.zig / build.zig.zon   # módulo corex_app; Zig + C23; testes/check cross-target
+│   ├── root.zig / README.md        # exports e comandos/ownership
+│   ├── scope.zig                  # [atual] elegibilidade Windows/Linux e domínios 3D/Canvas
+│   ├── project.zig                # modelo, parsing/serializer JSON canônico em memória
+│   ├── validation.zig             # decimal exato, metadados e caminhos lexicais
+│   ├── limits.zig                 # preflight JSON/ZON com limites antes da árvore alocada
+│   ├── presets.zig                # tabela ZON, resolução e invariantes dos 27 parâmetros
+│   ├── graphics_abi.zig / .h / .c  # DTO C23 privado com tradução e checks de fronteira
+│   ├── cli.zig                    # argumentos estritos, modos e combinações permitidas
+│   ├── logging.zig                # encoder/sink JSON lines de bootstrap, escritor único
+│   ├── jsonl.zig                  # framing incremental e validação do envelope recebido
+│   ├── distribution.zig           # manifesto/tabela instalados relativos ao executável
+│   ├── fingerprint.zig            # hash dos valores normalizados + tabela/distribuição
+│   ├── bootstrap.zig              # orquestração compartilhada, sem estado entre processos
+│   ├── testing_allocator.zig      # helper de OOM determinístico; não altera produção
+│   ├── contract_tests.zig         # testes de contrato e mutações; mais unit tests nos módulos
+│   ├── fixtures/
+│   │   ├── EmptyGame.proj         # exemplo aprovado espelhado de docs/examples
+│   │   ├── presets.zon            # única tabela aprovada usada no build/distribuição
+│   │   └── distribution.json      # identidade da distribuição e SHA-256 da tabela
+│   ├── platform_ext/
+│   │   ├── process.zig            # [atual] captura de dois pipes, deadline, propriedade/reap
+│   │   ├── process_native.c / .h  # [atual] observar término sem reap e terminar via SO
+│   │   ├── atomic_file.zig        # [planejado] replace/sync/backup e conflitos por SO
+│   │   └── dynamic_library.zig    # [planejado] carga de gameplay e unload seguro
+│   └── core_adapter/              # [planejado] tradução para serviços reais da biblioteca
+├── editor/                        # [atual] pacote independente; bootstrap CLI, sem UI ainda
+│   ├── build.zig / build.zig.zon   # shared local; instala binário, manifesto e tabela
 │   ├── README.md
-│   ├── src/main.zig              # bootstrap, erros e lifecycle
-│   ├── src/application.zig       # modelo de autoria e transações/undo
-│   ├── src/play.zig              # supervisão de filho e drenagem dos dois pipes
-│   ├── src/panels/               # hierarchy, inspector, content, console, code, viewport
-│   ├── src/ui_adapter.zig        # draw commands para renderer real do core
-│   └── tests/                    # snapshots e integração Play
-├── runtime/                      # [planejado] pacote independente; não criado nesta etapa
-│   ├── build.zig / build.zig.zon  # Zigway + shared + core; UI do jogo opcional
+│   ├── src/workspace.zig          # [atual] máquina de ferramentas 3D/Canvas, sem UI/GPU ainda
+│   ├── src/main.zig               # entrada com process.Init; bootstrap kind=editor
+│   ├── src/application.zig        # [planejado] modelo de autoria e transações/undo
+│   ├── src/play.zig               # [planejado] lifecycle real de Play, logs ao vivo, Stop
+│   ├── src/panels/                # [planejado] hierarchy, inspector, content, console,
+│   │                              # code, viewport; todos via ZyntraUI
+│   ├── src/ui_adapter.zig         # [planejado] draw commands para renderer real do core
+│   └── tests/                     # [planejado] snapshots ZyntraUI e integração Play
+├── runtime/                       # [atual] pacote independente; bootstrap CLI, sem jogo ainda
+│   ├── build.zig / build.zig.zon   # shared local; instala binário, manifesto e tabela
 │   ├── README.md
-│   ├── src/main.zig              # bootstrap e erros estruturados
-│   ├── src/application.zig       # carga do jogo/fixed timestep/interpolação
-│   ├── src/gameplay_host.zig     # módulo C de gameplay e VM única
-│   └── tests/                    # replay/headless/carga/erros
-├── include/engine_api.h          # [planejado] autoridade única da API C, a negociar com core
-├── gameplay_api/                 # [planejado] C++20 + sol2 + Lua 5.4
-│   ├── gameplay_api.cpp / .hpp    # Entity/Transform/Input sem RTTI na ponte
-│   └── tests/                    # erros protegidos e contratos C++/Lua
-├── examples/game/                # [planejado] cena e scripts C++/Lua executáveis
-├── resources/presets.zon         # [planejado] cópia de distribuição com manifesto/hash
-├── tools/                       # [atual] verificação de fixtures e toolchain com hashes; empacotamento planejado
-├── .github/workflows/            # [atual] shared-contracts.yml: Linux/macOS nativos, Windows cross; aplicações pendentes
-└── docs/                         # ADR, schemas, layout e progresso de implementação
+│   ├── src/main.zig               # entrada com process.Init; bootstrap kind=runtime
+│   ├── src/application.zig        # [planejado] carga/fixed timestep/interpolação/core jobs
+│   ├── src/gameplay_host.zig      # [planejado] ABI C e VM Lua única via gameplay_api
+│   └── tests/                     # [planejado] replay, simulação headless e carga real
+├── include/engine_api.h           # [planejado] API pública única do core; não é o DTO privado
+├── gameplay_api/                  # [planejado] C++20 + sol2 + Lua 5.4
+│   ├── gameplay_api.cpp / .hpp     # bindings Entity/Transform/Input pela ABI C
+│   └── tests/                     # erros protegidos, ownership e fronteiras C++/Lua
+├── examples/game/                 # [planejado] cena real e scripts C++/Lua executáveis
+├── tools/
+│   ├── zig-requirements.txt        # [atual] Zig 0.17.0 e hashes das wheels
+│   ├── check_contract_fixtures.py  # [atual] igualdade dos exemplos + digest do manifesto
+│   ├── check_application_targets.py # [atual] rejeição explícita de alvos fora do produto
+│   ├── ci_capture.py              # [atual] tail limitado de falhas em annotations GitHub
+│   └── test_bootstrap.py           # [atual] contratos entre executáveis e probes adversariais
+├── .github/workflows/
+│   └── shared-contracts.yml        # [atual] contratos e bootstraps; não gráficos
+└── docs/                          # ADRs, schemas, CLI, layout e evidências de progresso
 ```
 
-A granularidade de arquivos planejados pode ser ajustada sem alterar contratos. A árvore não atribui ao Editor funções do core nem cria promessa de renderer/reflexão inexistentes. `shared/fixtures` permite `zig test root.zig` e empacotamento independente do diretório de documentação; sua igualdade com os exemplos deve ser verificada nos testes de repositório.
+`zig-out/`, `.zig-cache/`, dependências baixadas e artefatos de teste não entram no Git. Cada pacote instala `bin/` e `share/corex/` em seu próprio prefixo. Os dois podem compartilhar um prefixo somente com manifesto/tabela idênticos.
 
-## Primeira fatia de implementação
+## Fatias implementadas
 
-Contrato compartilhado testável em Zig 0.17.0: limites antes de parsing alocante, versão antes de interpretar corpo, modelos tipados, validação semântica independente de filesystem, serializer em memória, tabela de presets e merge por presença. Testes usam allocator de teste para detectar leaks e falhas injetadas.
+1. Contratos compartilhados de documento/presets e DTO Zig/C23, sem dependência de janela ou core fictício.
+2. CLI/logging e bootstraps separados; distribuição verificada; subprocesso de **validação**, não Play. Handshake compara a configuração completa e usa arquivos + CLI + JSON lines.
 
-Parsing do documento não equivale a resolução de arquivos/ABI nem execução pronta. Nenhum teste desta fatia inicializa device ou afirma que renderer, jobs, gameplay, persistência atômica, snapshots de ZyntraUI ou Play estão implementados.
+Parsing/resolução de presets não equivalem a resolução de recursos por filesystem/ABI nem execução pronta. Nenhum teste do bootstrap comprova renderer, jobs, gameplay, persistência atômica, snapshots ou janelas. Os binários ainda não ligam Zigway/ZyntraUI/core; isso é integração pendente, não substituição por outro toolkit.
 
-## Bloqueios observados e próximos incrementos
+## Pendências com responsáveis
 
-- P04: Zig 0.17.0 instalado via `ziglang==0.17.0` em venv externo ao repositório. `zig fetch` dos archives locais produz hashes esperados, mas `zig build test` legado reporta hashes `N-V-...` de pacotes contendo diretório intermediário. Investigar resolução/empacotamento sem alterar versões ou hashes para mascarar falha.
-- P05/P06/P07/P09: renderer GPU, reflexão, jobs determinísticos e ABI/VM real ainda dependem do core. Não serão substituídos por implementações fictícias na aplicação.
-- P14 (responsável: aplicações): implementar verificação NFC completa e resolução segura por filesystem/links/caixa. Enquanto não houver NFC, caminhos não ASCII serão recusados explicitamente com `UnicodePathNormalizationUnavailable` na camada lexical, em vez de aceitar caminhos sem comprovar o contrato. Nomes de projeto Unicode são suportados. Essa restrição temporária não muda o schema aprovado.
-- P15 (responsável: aplicações): persistência atômica/backup, logs/CLI, builds dos dois executáveis, integração real Zigway/ZyntraUI, supervisor Play e CI de aplicações serão incrementos posteriores; não confundir serializer em memória com escrita atômica em disco.
+- P04 — build/CI: resolução do build legado/pacotes Zigway/ZyntraUI, sem trocar hashes/versões para ocultar falha.
+- P05/P06/P07/P09 — responsáveis pelo core e aplicações: GPU/reflexão/jobs/ABI/VM reais; sem substituí-los por mocks apresentados como produção.
+- P08 — plataforma/Zigway/ZyntraUI: superfícies/input/DPI Windows/Linux e capacidades reais por backend; melhorias upstream autorizadas.
+- P10/P15 — aplicações: persistência atômica/backup/conflitos, logger concorrente/frame, UI, ciclo de Play ao vivo e encerramento seguro inclusive fechamento do Editor. CLI/logs síncronos/builds/validação por filho foram entregues parcialmente.
+- P14 — aplicações: NFC completa e resolução segura por filesystem/links/caixa. Caminhos não ASCII no documento falham explicitamente até sua implementação; nomes de projeto e caminho CLI ao `.proj` podem ser Unicode.
+- P16 — build/CI: distribuição verificável Zig 0.17.0 Windows e testes nativos dos três SOs. Há cross-compilação, não execução Windows.
 
-O escopo de cada etapa será reportado por testes executados, sem declarar o conjunto completo concluído antecipadamente.
-
-- P16 (responsável: build/CI): obter distribuição verificável de Zig 0.17.0 para Windows e habilitar testes nativos. PyPI desta versão não lista wheel Windows. A matriz inicial só executa contratos compartilhados em Linux/macOS e cross-compila Windows; não satisfaz ainda CI completa das duas aplicações nos três SOs.
-
-## Resultado desta fatia
-
-`shared/README.md` documenta API, comandos, ownership e restrições. Módulo inclui DTO C23 privado com tradução explícita e verificações independentes dos 27 campos, sem inventar interface do core. `tools/zig-requirements.txt` fixa toolchain e hashes. Resultados locais e pendências estão em `docs/APPLICATION_PROGRESS.md`.
+Comandos e limitações: `APPLICATION_CLI.md`, `shared/README.md`, READMEs das aplicações. Evidências por etapa: `APPLICATION_PROGRESS.md`.

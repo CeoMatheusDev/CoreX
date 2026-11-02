@@ -1,9 +1,11 @@
+> **Escopo atualizado:** ADR-003 prevalece: Windows/Linux, 3D + UI/Canvas, sem cena 2D; Vulkan/OpenGL e D3D11/D3D12 no Windows. Referências antigas a macOS/Metal/WebGPU são históricas.
+
 # ADR-001 — Aplicações Editor e Runtime do CoreX
 
 - **Data:** 2026-11-01
 - **Status:** aprovado pelo usuário em 2026-11-01; schema `.proj` (item 2) também aprovado; `presets.zon` (item 3) ainda sujeito a aprovação.
 - **Escopo:** camada de aplicação; não implementa Hub nem subsistemas do core.
-- **Entrega atual:** item 1. Schemas `.proj` v1 e `presets.zon` serão especificados, respectivamente, nos itens 2 e 3, sujeitos a aprovação antes de código.
+- **Entrega original:** item 1. Portões dos itens 2 e 3 já cumpridos; progresso incremental em `APPLICATION_PROGRESS.md` e refinamentos do bootstrap em ADR-002.
 - **Responsável pela proposta:** implementação das aplicações Editor/Runtime.
 
 ## 1. Contexto e evidências locais
@@ -207,7 +209,7 @@ Falhas fatais anteriores à inicialização também usam um caminho mínimo de J
 
 Zigway é o único backend de janela/input. APIs do SO para processo, substituição atômica, sincronização, carregamento dinâmico e encerramento ficam em `platform_ext`, com implementação por plataforma e interface única; não são uma camada de janela concorrente. Não serão espalhados condicionais de SO pelos painéis ou loop.
 
-Windows, Linux e macOS são alvos de build/CI. Suporte a macOS gráfico de Zigway **não está comprovado neste checkout**; se não existir upstream, é dependência bloqueante a resolver com Zigway, não licença para introduzir GLFW/SDL nem simular suporte gráfico com headless. Recursos ausentes são detectados e comunicados. A matriz de backends gráficos depende do core e não implica que todos os nomes aceitos pelo schema funcionem em todo SO.
+Windows e Linux são os únicos alvos de produto/build/CI conforme ADR-003. macOS foi retirado do escopo por decisão do usuário. Limitações de Zigway/ZyntraUI podem ser corrigidas nas próprias bibliotecas com testes e versão/hash fixados, sem introduzir GLFW/SDL ou fingir gráficos com headless. Recursos ausentes são detectados e comunicados. A matriz de backends gráficos depende do core e não implica que todos os nomes aceitos pelo schema funcionem em todo SO.
 
 Dependências e toolchain são fixados por versão/commit e hash verificável, incluindo Lua e sol2; sem downloads flutuantes durante a execução. CI nativa de cada SO compila as duas aplicações, C23 e a ponte C++ e executa testes headless. Gráficos reais exigem smoke tests em runners com backend/GPU apropriados, separados dos testes null. Ausência de toolchain requerido faz a etapa falhar explicitamente, sem substituí-lo por outra versão para obter um selo verde.
 
@@ -256,7 +258,7 @@ Não há tarefas anônimas implícitas. “Responsável” abaixo identifica o p
 | P05 | Responsável pelo core | Disponibilizar renderer GPU real, consulta pré-device e integração de draw commands/viewport | Editor/Runtime gráficos reais |
 | P06 | Responsável pelo core | Oferecer ECS/reflexão/serializer e migrações com os contratos da seção 13 | inspetor e cenas completas |
 | P07 | Responsável pelo core + aplicações | Garantir budgets de jobs, barreiras, input e determinismo numérico documentado | garantias de frame/replay |
-| P08 | Responsável por plataforma / Zigway | Verificar macOS gráfico e resolver capacidades ausentes upstream | paridade gráfica dos três SOs |
+| P08 | Responsável por plataforma / Zigway | Validar superfícies/input/DPI Windows/Linux e corrigir limitações upstream | viewport 3D e Canvas reais |
 | P09 | Aplicações + responsável pelo core | Formalizar `engine_api.h`, VM única e configuração sem exceções/RTTI da ponte | gameplay e testes de fronteira |
 | P10 | Aplicações | Implementar persistência atômica, supervisão de filho e extensões por SO com fault injection | salvar/Play de produção |
 | P11 | Aplicações + responsável pelo gameplay | Definir dados migráveis, lifecycle de scripts e reload Lua transacional | reload Lua obrigatório |
@@ -271,9 +273,11 @@ Projetos executam código nativo e Lua: abrir metadados não autoriza build/exec
 
 A arquitetura privilegia contratos auditáveis, arquivos legíveis e falhas explícitas em vez de compatibilidade silenciosa. Existem custos: wrappers C, migrações, separação entre autoria e estado em Play, reinício para mudanças gráficas e dependências bloqueantes do core. Esses custos são aceitos para evitar divergência de configuração, corrupção de projetos e promessas falsas sobre capacidades existentes.
 
-## 17. Portões de aprovação
+## 17. Portões de aprovação (histórico)
 
-1. **Agora:** revisar este ADR e confirmar suas decisões, inclusive bloqueios e limites declarados.
-2. **Após confirmação:** entregar somente o schema `.proj` v1 com tipos, exemplos e regras de compatibilidade (item 2).
-3. **Após aprovação do item 2:** entregar o schema de `presets.zon` (item 3).
-4. **Somente com ambos aprovados:** propor a árvore completa (item 4) e avançar a código, testes, CI e documentação (itens 5–8), com os bloqueios do core tratados explicitamente.
+1. ADR aprovado pelo usuário em 2026-11-01.
+2. Schema `.proj` v1 aprovado pelo usuário antes de código.
+3. Schema e valores de `presets.zon` aprovados pelo usuário antes de código.
+4. Estrutura e implementação incremental liberadas: contratos em `shared/` e bootstraps CLI em `editor/` e `runtime/`. Não houve autorização implícita para inventar capacidades do core. GUI, execução de jogo, API pública de gameplay e persistência permanecem pendentes.
+
+CLI/logging/supervisão curta de validação têm decisões complementares em `ADR-002-validation-bootstrap.md`, dentro das fronteiras aqui aprovadas.

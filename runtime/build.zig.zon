@@ -1,0 +1,8 @@
+.{
+    .name = .corex_runtime,
+    .fingerprint = 0xf8bc74cf2819a1a9,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{ .shared = .{ .path = "../shared" } },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "README.md" },
+}

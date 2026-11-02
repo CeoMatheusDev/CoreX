@@ -1,11 +1,14 @@
+> **Escopo atual das aplicações:** Windows/Linux; Editor 3D + UI/Canvas, sem cena 2D. Vulkan/OpenGL previstos nos dois SOs, D3D11/D3D12 no Windows — ainda sem renderers GPU ligados. [ADR-003](docs/ADR-003-desktop-3d-canvas.md) · [Schema v2](docs/PROJECT_SCHEMA_V2.md).
+
 # CoreX Engine
 
 Game Engine profissional em Zig 0.17.0.
 
 ## Editor e Runtime — implementação em andamento
 
-ADR e schemas aprovados; primeira fatia implementada em [`shared/`](shared/README.md): parser/serializer `.proj`, presets e DTO Zig↔C23, com testes independentes do build legado. **Os dois executáveis gráficos ainda não estão implementados.**
+ADR e schemas aprovados. Contratos em [`shared/`](shared/README.md) e bootstraps independentes em [`editor/`](editor/README.md) e [`runtime/`](runtime/README.md): parser/serializer `.proj`, presets, DTO Zig↔C23, CLI, logs JSON lines e verificação entre processos. **Os executáveis ainda validam documentos; não há Editor gráfico ou execução de jogo.**
 
+- [CLI executável e limites](docs/APPLICATION_CLI.md)
 - [Estrutura-alvo](docs/APPLICATION_LAYOUT.md)
 - [Progresso e evidências atuais](docs/APPLICATION_PROGRESS.md)
 - [Contrato `.proj` v1](docs/PROJECT_SCHEMA_V1.md)
