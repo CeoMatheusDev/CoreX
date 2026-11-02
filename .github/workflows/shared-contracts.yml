@@ -31,6 +31,8 @@ jobs:
           echo "$RUNNER_TEMP/corex-tools-venv/bin" >> "$GITHUB_PATH"
       - name: Verify compiler version
         run: python -c "import subprocess; v = subprocess.check_output(['python', '-m', 'ziglang', 'version'], text=True).strip(); assert v == '0.17.0', v"
+      - name: Enforce Python tooling boundary
+        run: python tools/python/check_tooling_boundary.py
       - name: Check approved fixtures
         run: python tools/python/check_contract_fixtures.py
       - name: Check formatting
