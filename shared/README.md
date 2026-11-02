@@ -23,7 +23,7 @@ python3 -m venv tools/.venv
 tools/.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r tools/python/requirements-zig.txt
 tools/.venv/bin/python -m ziglang version
 cd shared
-tools/.venv/bin/python -m ziglang build test --summary all
+../tools/.venv/bin/python -m ziglang build test --summary all
 ```
 
 O toolchain de build suportado usa wheels Linux; macOS foi removido do produto (ADR-003). Não foi encontrada wheel Windows para 0.17.0; suporte nativo de CI Windows continua pendente (P16). Não adotar outra versão de Zig silenciosamente.
