@@ -30,10 +30,12 @@ O comando deve reportar exatamente `0.17.0`. Não instale dependências globalme
 | `check_application_targets.py` | Verifica que alvos fora do produto são recusados pelo build. |
 | `test_bootstrap.py` | Testes de integração entre os executáveis Editor e Runtime. |
 | `ci_capture.py` | Encaminha saída de comandos na CI e limita o diagnóstico de falha. |
+| `check_tooling_boundary.py` | Impede que fontes Python ou manifests de dependências escapem desta pasta. |
 
 Execute a partir da raiz:
 
 ```sh
+tools/.venv/bin/python tools/python/check_tooling_boundary.py
 tools/.venv/bin/python tools/python/check_contract_fixtures.py
 tools/.venv/bin/python tools/python/test_prepare_legacy_deps.py
 tools/.venv/bin/python tools/python/prepare_legacy_deps.py
