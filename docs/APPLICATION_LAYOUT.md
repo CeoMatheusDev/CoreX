@@ -63,6 +63,7 @@ CoreX/
 │   ├── gameplay_api.cpp / .hpp     # bindings Entity/Transform/Input pela ABI C
 │   └── tests/                     # erros protegidos, ownership e fronteiras C++/Lua
 ├── examples/game/                 # [planejado] cena real e scripts C++/Lua executáveis
+├── exemploproject/                # [parcial] .proj v2 e pastas de exemplo, sem cena funcional
 ├── tools/
 │   ├── zig-requirements.txt        # [transitório] fallback pip das wheels fixadas
 │   ├── install_zig.sh              # [atual] instala wheel Zig Linux fixada sem Python

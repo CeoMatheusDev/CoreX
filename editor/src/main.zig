@@ -9,4 +9,5 @@ pub fn main(init: std.process.Init) void {
 test {
     std.testing.refAllDecls(app);
     _ = @import("workspace.zig");
+    _ = @import("project_preflight.zig");
 }

@@ -49,7 +49,7 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
     };
     if (options.help) {
         try logger.emit(.info, "cli.help", "Bootstrap de validacao; execucao grafica/simulacao ainda indisponivel", .{
-            .usage = if (kind == .editor) "CoreXEditor --project <file.proj> [--headless] [--validate-only] [--check-runtime <absolute-executable>]" else "CoreXRuntime --project <file.proj> [--headless] [--validate-only]",
+            .usage = if (kind == .editor) "CoreXEditor (--project <file.proj> | <file.proj>) [--headless] [--validate-only] [--check-runtime <absolute-executable>]" else "CoreXRuntime --project <file.proj> [--headless] [--validate-only]",
             .validation_scope = "document_and_presets",
             .core_linked = false,
         });

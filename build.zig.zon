@@ -22,6 +22,7 @@
         "docs",
         "tests",
         "examples",
+        "exemploproject",
         "tools",
     },
 }
