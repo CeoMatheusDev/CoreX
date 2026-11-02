@@ -3,6 +3,15 @@ zig-pkg/
 zig-out/
 *.swp
 *.tmp
+*.py[cod]
 
+# Python tooling stays local to tools/ and never enters the product.
+tools/.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generic local environments/caches.
 .venv/
 .cache/
