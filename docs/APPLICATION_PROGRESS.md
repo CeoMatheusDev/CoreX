@@ -24,7 +24,7 @@ ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa liber
 
 ## Continuação — build legado e testes de fumaça (2026-11-02)
 
-- P04: identificada uma solução alternativa para o cache de tarballs do Zig 0.17.0, que antes reempacotava o conteúdo com uma pasta externa adicional. `tools/prepare_legacy_deps.py` extrai as releases fixadas após verificar SHA-256 e valida o hash de pacote Zig contra o manifesto, sem alterar versões. Cache global e de pacotes isolados foram usados para verificar a reprodução. O comando normal sem preparar o cache permanece sujeito ao problema; não é uma correção upstream do Zig.
+- P04: identificada uma solução alternativa para o cache de tarballs do Zig 0.17.0, que antes reempacotava o conteúdo com uma pasta externa adicional. `tools/python/prepare_legacy_deps.py` extrai as releases fixadas após verificar SHA-256 e valida o hash de pacote Zig contra o manifesto, sem alterar versões. Cache global e de pacotes isolados foram usados para verificar a reprodução. O comando normal sem preparar o cache permanece sujeito ao problema; não é uma correção upstream do Zig.
 - `zig build test` da raiz apontava para `src/main.zig`, que não tinha testes. Agora executa quatro testes de fumaça explícitos: lifecycle, IDs ECS, expansão/execução de jobs e submissão ao backend null. Eles revelaram e permitiram corrigir erros de compilação antes ocultos em `JobSystem.executeAll` e `Renderer.submit`. Não substituem a suíte histórica nem testam GPU, gameplay ou recursos reais.
 - Linux local: preparador e 3 testes Python passaram; `zig build` passou; 4/4 testes Zig passaram em Debug e ReleaseSafe. O teste Debug também passou com caches Zig isolados. O ambiente só possui `libX11.so.6`; para a execução local foi usado um symlink temporário de `libX11.so` via `LIBRARY_PATH`. A CI usa `libx11-dev` em vez desse artifício. Workflow novo escrito, ainda não executado no GitHub; Windows nativo/cross não foi validado nesta fatia.
 
@@ -78,7 +78,7 @@ Presets/DTO C23 v1 não foram modificados semanticamente. `.proj` segue somente 
    - Configuração resolvida sem alocação/device; invariantes revalidadas após overrides.
 3. DTO **privado de aplicação** Zig↔C23, 116 bytes, com tradução de cada campo, flags/enumerações explícitas, validação C e testes de todos os offsets/tamanho/alinhamento. Compilado com `addCSourceFiles` e `-std=c23`. **Não é a API pública do core** nem implementa GPU.
 4. 27 testes Zig, com cenários de contrato, mutações determinísticas, ownership e falhas de alocação injetadas.
-5. Toolchain Python fixado por versão e SHA-256 das wheels; fixtures empacotadas comparadas aos exemplos aprovados.
+5. Toolchain Zig 0.17.0 fixado por versão e SHA-256 das wheels; ambiente Python auxiliar isolado em `tools/.venv/`; fixtures empacotadas comparadas aos exemplos aprovados.
 6. Workflow inicial de **contratos compartilhados**: Linux/macOS nativos e cross-compilação Windows. Não é a CI final das aplicações.
 7. README do módulo, atualização do README raiz e registro dos portões aprovados.
 
@@ -93,10 +93,10 @@ Ambiente Linux x86_64; Zig instalado em venv externo ao checkout com `ziglang==0
 | `cd shared && zig test -I . -lc root.zig -cflags -std=c23 -Wall -Wextra -Werror -- graphics_abi.c` | runner direto Zig+C23 passou |
 | `cd shared && zig build check -Dtarget=x86_64-windows-gnu -j2 --summary all` | compilação/link dos testes Windows passou; sem execução |
 | Header privado compilado como C++20 sem RTTI/exceções, com `c++ -fsyntax-only` | passou; não exercita gameplay C++/sol2 |
-| `python tools/check_contract_fixtures.py` | exemplos e fixtures idênticos |
+| `tools/.venv/bin/python tools/python/check_contract_fixtures.py` | exemplos e fixtures idênticos |
 | `zig fmt --check shared` | passou |
 
-Os comandos Zig foram executados nesta sessão via `python -m ziglang`, pois `zig` não estava originalmente no PATH. A tabela representa resultados locais, **não resultados do GitHub Actions**. O workflow foi escrito, mas não disparado nesta etapa. macOS nativo e Windows nativo não foram executados no sandbox Linux.
+Os comandos Zig foram executados nesta sessão via `tools/.venv/bin/python -m ziglang`, pois `zig` não estava originalmente no PATH. A tabela representa resultados locais, **não resultados do GitHub Actions**. O workflow foi escrito, mas não disparado nesta etapa. macOS nativo e Windows nativo não foram executados no sandbox Linux.
 
 ### O que os testes comprovam
 
