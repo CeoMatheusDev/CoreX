@@ -23,7 +23,7 @@ editor/zig-out/ ou runtime/zig-out/
 
 É possível instalar os dois num prefixo comum com `zig build --prefix <diretório>`, desde que ambos usem exatamente a mesma versão de código/manifesto/tabela. Copiar somente o binário sem `share/corex` causa erro; não há busca de fallback no projeto/CWD. Pode-se mover a árvore instalada inteira.
 
-Sem `zig` no PATH, usar `python -m ziglang` após instalar `tools/zig-requirements.txt` em venv externo ao checkout. A versão 0.17.0 é exigida; não substituir por outra versão.
+Sem `zig` no PATH, usar o ambiente isolado `tools/.venv/`: crie-o com `python3 -m venv tools/.venv` e instale `tools/python/requirements-zig.txt` com `tools/.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r tools/python/requirements-zig.txt`. Execute o compilador por `tools/.venv/bin/python -m ziglang`. A versão 0.17.0 é exigida; não substituir por outra versão. Esse ambiente é exclusivo de desenvolvimento e não é necessário para executar Editor/Runtime.
 
 ## Argumentos
 
