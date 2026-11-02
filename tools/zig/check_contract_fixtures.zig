@@ -70,14 +70,28 @@ fn checkHash(a: Allocator, manifest: []const u8, presets: []const u8) !void {
     if (!std.mem.eql(u8, expected.string, &actual)) return error.PresetsHashMismatch;
 }
 
+fn contextualError(err: anyerror, context: []const u8) anyerror {
+    // Unit tests assert the errors directly; the standalone CLI reports the
+    // relevant files and stage without printing potentially sensitive input.
+    if (!@import("builtin").is_test) std.debug.print("Fixture check ({s}): {s}\n", .{ context, @errorName(err) });
+    return err;
+}
+
 fn verify(a: Allocator, input: Inputs) !void {
-    if (!std.mem.eql(u8, input.v1_example, input.v1_fixture)) return error.V1FixtureMismatch;
-    if (!std.mem.eql(u8, input.v2_example, input.v2_fixture)) return error.V2FixtureMismatch;
-    if (!std.mem.eql(u8, input.presets_example, input.presets_fixture)) return error.PresetsFixtureMismatch;
-    try checkVersions(a, input.v1_schema, input.v1_fixture, 1);
-    try checkVersions(a, input.v2_schema, input.v2_fixture, 2);
-    try checkBackends(a, input.v2_schema);
-    try checkHash(a, input.manifest, input.presets_fixture);
+    if (!std.mem.eql(u8, input.v1_example, input.v1_fixture))
+        return contextualError(error.V1FixtureMismatch, "docs/examples/EmptyGame.proj vs shared/fixtures/EmptyGame.proj");
+    if (!std.mem.eql(u8, input.v2_example, input.v2_fixture))
+        return contextualError(error.V2FixtureMismatch, "docs/examples/EmptyGameV2.proj vs shared/fixtures/EmptyGameV2.proj");
+    if (!std.mem.eql(u8, input.presets_example, input.presets_fixture))
+        return contextualError(error.PresetsFixtureMismatch, "docs/examples/presets.zon vs shared/fixtures/presets.zon");
+    checkVersions(a, input.v1_schema, input.v1_fixture, 1) catch |err|
+        return contextualError(err, "v1 version: docs/schemas/project-v1.schema.json and shared/fixtures/EmptyGame.proj");
+    checkVersions(a, input.v2_schema, input.v2_fixture, 2) catch |err|
+        return contextualError(err, "v2 version: docs/schemas/project-v2.schema.json and shared/fixtures/EmptyGameV2.proj");
+    checkBackends(a, input.v2_schema) catch |err|
+        return contextualError(err, "v2 backends: docs/schemas/project-v2.schema.json");
+    checkHash(a, input.manifest, input.presets_fixture) catch |err|
+        return contextualError(err, "presets hash: shared/fixtures/distribution.json and shared/fixtures/presets.zon");
 }
 
 fn readFile(a: Allocator, io: Io, root: Io.Dir, path: []const u8) ![]u8 {
@@ -131,7 +145,7 @@ fn run(init: std.process.Init) !void {
     if (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help")) {
             if (args.next() != null) return error.InvalidArguments;
-            try Io.File.stdout().writeStreamingAll(init.io, "Usage: check_contract_fixtures [--root REPOSITORY_ROOT]\nDefault: current working directory.\n");
+            try Io.File.stdout().writeStreamingAll(init.io, "Usage: corex-check-fixtures [--root REPOSITORY_ROOT]\nDefault: current working directory.\n");
             return;
         }
         if (!std.mem.eql(u8, arg, "--root")) return error.InvalidArguments;

@@ -15,15 +15,18 @@ zig build check -Dtarget=x86_64-windows-gnu -j2 --summary all
 
 `check` compila os testes para outro alvo sem executá-los. **Não equivale a teste nativo Windows.** O primeiro cross-link pode demorar por compilar o CRT.
 
-Sem Zig no PATH, use um ambiente virtual Python fora do repositório e instale a distribuição exata, com hashes das wheels:
+Sem Zig no PATH, no Linux é possível instalar o mesmo wheel fixado por SHA-256 sem Python:
 
 ```sh
-# Na raiz do repositório, com um ambiente virtual já ativado:
-python -m pip install --require-hashes --only-binary=:all: -r tools/zig-requirements.txt
-python -m ziglang version
+# Na raiz; o diretório de destino ainda não deve existir.
+mkdir -p .cache
+sh tools/install_zig.sh "$PWD/.cache/zig-0.17.0"
+ZIG_EXE="$PWD/.cache/zig-0.17.0/ziglang/zig"
 cd shared
-python -m ziglang build test --summary all
+"$ZIG_EXE" build test --summary all
 ```
+
+O instalador requer `curl`, `unzip`, `sha256sum` e utilitários POSIX; também aceita um wheel local já baixado. Ele não é necessário se Zig 0.17.0 já estiver disponível.
 
 O toolchain de build suportado usa wheels Linux; macOS foi removido do produto (ADR-003). Não foi encontrada wheel Windows para 0.17.0; suporte nativo de CI Windows continua pendente (P16). Não adotar outra versão de Zig silenciosamente.
 
@@ -37,7 +40,7 @@ zig test -I . -lc root.zig -cflags -std=c23 -Wall -Wextra -Werror -- graphics_ab
 Na raiz:
 
 ```sh
-python tools/check_contract_fixtures.py
+(cd tools/zig && zig build validate-fixtures)
 zig fmt --check shared
 c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror -fsyntax-only -x c++ shared/graphics_abi.h
 ```

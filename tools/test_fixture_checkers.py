@@ -40,7 +40,7 @@ class FixtureCheckers(unittest.TestCase):
         (root / "unrelated cwd").mkdir()
         return root
 
-    def compare(self, root, python_ok, zig_ok, zig_error=None):
+    def compare(self, root, python_ok, zig_ok, zig_error=None, zig_context=()):
         cwd = root / "unrelated cwd"
         python = subprocess.run(
             [sys.executable, str(root / "tools/check_contract_fixtures.py")],
@@ -54,8 +54,12 @@ class FixtureCheckers(unittest.TestCase):
         self.assertEqual(zig.returncode, 0 if zig_ok else 1, zig.stderr)
         if zig_error:
             self.assertIn(zig_error.encode(), zig.stderr)
+        for item in zig_context:
+            self.assertIn(item.encode(), zig.stderr)
         if zig_ok:
             self.assertIn(b"OK:", zig.stdout)
+        else:
+            self.assertNotIn(b"OK:", zig.stdout)
 
     @staticmethod
     def put_json(root, name, value):
@@ -74,22 +78,22 @@ class FixtureCheckers(unittest.TestCase):
         self.assertIn(b"OK:", result.stdout)
 
     def test_each_documented_pair_mismatch(self):
-        for name, error in (
-            (PATHS[0], "V1FixtureMismatch"),
-            (PATHS[2], "V2FixtureMismatch"),
-            (PATHS[4], "PresetsFixtureMismatch"),
+        for name, paired, error in (
+            (PATHS[0], PATHS[1], "V1FixtureMismatch"),
+            (PATHS[2], PATHS[3], "V2FixtureMismatch"),
+            (PATHS[4], PATHS[5], "PresetsFixtureMismatch"),
         ):
             with self.subTest(name=name):
                 root = self.fresh()
                 (root / name).write_bytes(b"different")
-                self.compare(root, False, False, error)
+                self.compare(root, False, False, error, (name, paired))
 
     def test_each_input_is_required(self):
         for name in PATHS:
             with self.subTest(name=name):
                 root = self.fresh()
                 (root / name).unlink()
-                self.compare(root, False, False, "FileNotFound")
+                self.compare(root, False, False, "FileNotFound", (name,))
 
     def test_invalid_json_in_every_parsed_file(self):
         for name in (PATHS[1], PATHS[3], PATHS[6], PATHS[7], PATHS[8]):
@@ -101,7 +105,7 @@ class FixtureCheckers(unittest.TestCase):
                     self.pair(root, PATHS[2], PATHS[3], b"{")
                 else:
                     (root / name).write_bytes(b"{")
-                self.compare(root, False, False, "UnexpectedEndOfInput")
+                self.compare(root, False, False, "UnexpectedEndOfInput", (name,))
 
     def test_versions_changed_independently(self):
         for version, schema_name, example, fixture in (
@@ -119,7 +123,7 @@ class FixtureCheckers(unittest.TestCase):
                         project = json.loads((root / fixture).read_text(encoding="utf-8"))
                         project["schema_version"] = 99
                         self.pair(root, example, fixture, json.dumps(project).encode())
-                    self.compare(root, False, False, "SchemaVersionMismatch")
+                    self.compare(root, False, False, "SchemaVersionMismatch", (schema_name, fixture))
 
     def test_backends_and_hash(self):
         for values in (
@@ -133,7 +137,7 @@ class FixtureCheckers(unittest.TestCase):
                 schema = json.loads((root / PATHS[7]).read_text(encoding="utf-8"))
                 schema["properties"]["engine"]["properties"]["graphics_backend"]["enum"] = values
                 self.put_json(root, PATHS[7], schema)
-                self.compare(root, False, False, "BackendMismatch")
+                self.compare(root, False, False, "BackendMismatch", (PATHS[7],))
         for values in (None, "vulkan"):
             with self.subTest(non_array_backends=values):
                 root = self.fresh()
@@ -143,7 +147,7 @@ class FixtureCheckers(unittest.TestCase):
                 self.compare(root, False, False, "InvalidContractShape")
         root = self.fresh()
         self.pair(root, PATHS[4], PATHS[5], b"modified presets")
-        self.compare(root, False, False, "PresetsHashMismatch")
+        self.compare(root, False, False, "PresetsHashMismatch", (PATHS[8], PATHS[5]))
 
     def test_missing_or_wrong_shape_fields(self):
         for name, field in ((PATHS[6], "properties"), (PATHS[7], "properties"),
@@ -164,6 +168,26 @@ class FixtureCheckers(unittest.TestCase):
         self.assertTrue(original.startswith(b"{"))
         self.pair(root, PATHS[0], PATHS[1], b'{"schema_version":1,' + original[1:])
         self.compare(root, True, False, "DuplicateField")
+
+    def test_duplicate_escaped_keys_and_manifest_duplicates(self):
+        root = self.fresh()
+        original = (root / PATHS[1]).read_bytes()
+        self.pair(root, PATHS[0], PATHS[1], b'{"\\u0073chema_version":1,' + original[1:])
+        self.compare(root, True, False, "DuplicateField", (PATHS[1], PATHS[6]))
+        root = self.fresh()
+        original = (root / PATHS[8]).read_bytes()
+        (root / PATHS[8]).write_bytes(b'{"presets_sha256":"not-the-hash",' + original[1:])
+        self.compare(root, True, False, "DuplicateField", (PATHS[8], PATHS[5]))
+
+    def test_diagnostics_do_not_echo_input_contents(self):
+        root = self.fresh()
+        secret = b"do-not-echo-this-project-value"
+        self.pair(root, PATHS[0], PATHS[1], b'{"secret":"' + secret + b'"}')
+        result = subprocess.run([str(CHECKER), "--root", str(root)], capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"InvalidContractShape", result.stderr)
+        self.assertIn(PATHS[1].encode(), result.stderr)
+        self.assertNotIn(secret, result.stderr + result.stdout)
 
     def test_intentional_exact_schema_version_policy(self):
         for project_version, schema_version, error in (
@@ -199,7 +223,7 @@ class FixtureCheckers(unittest.TestCase):
                 result = subprocess.run([str(CHECKER), *args], cwd=root, capture_output=True, timeout=20)
                 self.assertEqual(result.returncode, expected, result.stderr)
                 if args == ["--help"]:
-                    self.assertIn(b"Usage:", result.stdout)
+                    self.assertIn(b"Usage: corex-check-fixtures", result.stdout)
 
 
 if __name__ == "__main__":

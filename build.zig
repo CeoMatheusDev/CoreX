@@ -4,6 +4,58 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // `check` is deliberately compile-only for cross-target CI. Native
+    // project validation gets a separate entry point and never runs a
+    // cross-compiled executable.
+    const validate = b.step("validate", "Run native tooling and application contract tests (not full CI)");
+    if (!target.query.isNative()) {
+        validate.dependOn(&b.addFail("validate runs native binaries only; omit -Dtarget and -Dcpu (use check to cross-compile)").step);
+    } else {
+        const optimize_flag = b.fmt("-Doptimize={s}", .{@tagName(optimize)});
+        const commands = [_]struct { dir: []const u8, step: []const u8 }{
+            .{ .dir = "tools/zig", .step = "validate" },
+            .{ .dir = "shared", .step = "test" },
+            .{ .dir = "editor", .step = "test" },
+            .{ .dir = "runtime", .step = "test" },
+        };
+        for (commands) |command| {
+            const run = b.addRunFile(.zig_exe);
+            run.addArgs(&.{ "build", command.step, optimize_flag, "-j2", "--summary", "all" });
+            run.setCwd(b.path(command.dir));
+            run.has_side_effects = true;
+            validate.dependOn(&run.step);
+        }
+
+        const format = b.addRunFile(.zig_exe);
+        format.addArgs(&.{
+            "fmt",                                   "--check",
+            "build.zig",                             "src/legacy_tests.zig",
+            "src/zigway_input_tests.zig",            "src/jobs/job_system.zig",
+            "src/events/event.zig",                  "src/main.zig",
+            "src/graphics/renderer/render.zig",      "tests/events/test_basics.zig",
+            "tests/integration/engine_pipeline.zig", "shared",
+            "editor",                                "runtime",
+            "tools/zig",
+        });
+        format.setCwd(b.path("."));
+        format.has_side_effects = true;
+        validate.dependOn(&format.step);
+
+        // Compile each private C header alone as C++20 without relying on an
+        // external C++ driver or headers from a previous translation unit.
+        const generated = b.addWriteFiles();
+        const headers = [_]struct { name: []const u8, contents: []const u8 }{
+            .{ .name = "graphics_abi_header.cpp", .contents = "#include \"graphics_abi.h\"\n" },
+            .{ .name = "process_native_header.cpp", .contents = "#include \"platform_ext/process_native.h\"\n" },
+        };
+        for (headers) |header| {
+            const module = b.createModule(.{ .target = b.graph.host, .optimize = optimize, .link_libc = true });
+            module.addIncludePath(b.path("shared"));
+            module.addCSourceFile(.{ .file = generated.add(header.name, header.contents), .flags = &.{ "-std=c++20", "-fno-rtti", "-fno-exceptions", "-Wall", "-Wextra", "-Werror" } });
+            validate.dependOn(&b.addObject(.{ .name = header.name, .root_module = module }).step);
+        }
+    }
+
     const zigway_dep = b.dependency("zigway", .{
         .target = target,
         .optimize = optimize,

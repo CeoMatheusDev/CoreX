@@ -64,10 +64,18 @@ CoreX/
 │   └── tests/                     # erros protegidos, ownership e fronteiras C++/Lua
 ├── examples/game/                 # [planejado] cena real e scripts C++/Lua executáveis
 ├── tools/
-│   ├── zig-requirements.txt        # [atual] Zig 0.17.0 e hashes das wheels
-│   ├── check_contract_fixtures.py  # [atual] igualdade dos exemplos + digest do manifesto
+│   ├── zig-requirements.txt        # [transitório] fallback pip das wheels fixadas
+│   ├── install_zig.sh              # [atual] instala wheel Zig Linux fixada sem Python
+│   ├── prepare_legacy_deps.sh      # [atual] prepara pacotes via extrator Zig e zig fetch
+│   ├── test_prepare_legacy_deps.sh # [atual] testes de integração online/offline
+│   ├── test_install_zig.sh         # [atual] regressões offline do instalador
+│   ├── check_python_inventory.sh  # [atual] guard transitório dos arquivos Python rastreados
+│   ├── test_python_inventory.sh   # [atual] regressão do guard em índice Git temporário
+│   ├── python-migration-allowlist.txt # [atual] inventário explícito até a remoção
+│   ├── test_zig_validate.sh       # [atual] regressão de execução e cache da validação Zig
+│   ├── check_contract_fixtures.py  # [atual] referência Python para testes diferenciais
 │   ├── test_fixture_checkers.py    # [atual] comparação de CLIs em árvore temporária
-│   ├── zig/                       # [atual] ferramentas Zig para fixtures e alvos; migração gradual
+│   ├── zig/                       # [atual] validadores, teste CLI, extrator e captura experimental
 │   ├── ci_capture.py              # [atual] tail limitado de falhas em annotations GitHub
 │   ├── test_ci_capture.py         # [atual] streaming, status e limpeza do capturador
 │   ├── CI_CAPTURE.md              # [atual] contrato e limites da ferramenta de CI

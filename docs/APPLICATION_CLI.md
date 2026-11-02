@@ -23,7 +23,7 @@ editor/zig-out/ ou runtime/zig-out/
 
 É possível instalar os dois num prefixo comum com `zig build --prefix <diretório>`, desde que ambos usem exatamente a mesma versão de código/manifesto/tabela. Copiar somente o binário sem `share/corex` causa erro; não há busca de fallback no projeto/CWD. Pode-se mover a árvore instalada inteira.
 
-Sem `zig` no PATH, usar `python -m ziglang` após instalar `tools/zig-requirements.txt` em venv externo ao checkout. A versão 0.17.0 é exigida; não substituir por outra versão.
+Sem `zig` no PATH, no Linux é possível instalar a distribuição fixada sem Python com `tools/install_zig.sh`; veja [o guia de migração](PYTHON_REMOVAL.md). A versão 0.17.0 é exigida; não substituir por outra versão.
 
 ## Argumentos
 

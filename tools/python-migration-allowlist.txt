@@ -1,0 +1,7 @@
+tools/check_contract_fixtures.py
+tools/ci_capture.py
+tools/prepare_legacy_deps.py
+tools/test_bootstrap.py
+tools/test_ci_capture.py
+tools/test_fixture_checkers.py
+tools/test_prepare_legacy_deps.py

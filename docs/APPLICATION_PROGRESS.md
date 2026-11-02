@@ -4,6 +4,45 @@
 
 ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
 
+## Continuação — testes black-box das fixtures em Zig
+
+- `tools/zig/test_fixture_cli.zig` exercita a CLI Zig compilada com cópias isoladas dos nove arquivos reais, cwd diferente e caminho com espaços/acentos. Os 11 testes agrupam os casos da suíte diferencial: pares divergentes, cada arquivo ausente, JSON inválido, versões, backends, hash, shapes, duplicatas e escapes, argumentos, diagnóstico sem conteúdo e limite de 4 MiB. O supervisor mantém timeout de 20 s e captura limitada; os dados originais não são alterados.
+- A suíte executa em `zig build test`, `zig build test-fixture-cli` e `zig build validate`; não reutiliza sucesso do teste em cache quando as fixtures mudam. `check` apenas compila, inclusive para Windows; `test-fixture-cli` recusa explicitamente execução cross. Os testes requerem uma árvore com `docs/` e `shared/` completos; `-Drepository-root` permite usar uma cópia. O teste POSIX confirma que corrupção após sucesso não é mascarada por cache e que cross é recusado.
+- Linux local: **11/11** testes CLI em Debug e ReleaseSafe, `validate` **35/35** testes do tooling em ambos os modos, e suite diferencial Python **13/13** em cada modo. Mutações controladas que quebraram comparação v1, hash, backends, duplicatas e limite de tamanho foram detectadas pelos testes black-box e revertidas. Remover apenas uma checagem de tamanho redundante não alterou o comportamento porque o leitor também aplica o limite. Windows foi somente cross-compilado. A CI local inclui os novos testes sem desativar a referência Python; ainda não há execução remota da configuração alterada.
+
+## Continuação — preparação legada em Zig e shell
+
+- `tools/prepare_legacy_deps.sh` compila o extrator via Zig Build, baixa as releases fixadas ou usa arquivos offline, verifica pins no manifesto e confirma o hash de pacote retornado por `zig fetch`. `corex-extract-legacy` verifica SHA-256 antes da descompressão, CRC/tamanho gzip, limites de arquivo/tar/membros/entradas, prefixo e tipos permitidos; rejeita links, paths inseguros, gzip extra e arquivos duplicados. A extração escreve em diretório novo, dentro de área temporária privada. A ferramenta só aceita os dois hashes fixados, não é extrator genérico.
+- Os **10 testes Zig** incluem tamanhos-limite, hashes, CRC, gzip truncado, paths, links, tipos especiais, duplicatas, destino existente e cleanup. Testes shell validam releases reais, caminhos com espaços/acentos, corrupção dos dois arquivos, versão Zig/pin inválido, divergência de hash Zig e limpeza. O preparador Python e seus testes permanecem como comparação na CI; a migração ainda aguarda execução remota e revisão.
+- Em cópia limpa Linux x86_64, com caches Zig separados e sem `.venv` ou `zig-pkg`, o preparador Zig/shell baixou e verificou os dois pacotes com PATH restrito a utilitários de sistema; em seguida `zig build validate` passou com PATH vazio. Esse teste não inclui os testes legados/integradores Python nem comprova Windows nativo. A ferramenta compilou em cross Windows; execução nativa não foi testada.
+
+## Continuação — instalação Zig sem Python no Linux
+
+- Novo `tools/install_zig.sh`: baixa por HTTPS ou aceita wheel offline, limita tamanho, verifica SHA-256 fixado antes de extrair e recusa destinos existentes. Extrai compilador, biblioteca Zig e licença; requer `curl`, `unzip`, `sha256sum` e utilitários de sistema. O helper Python opcional de LLDB que vem na biblioteca upstream não é invocado no build. A wheel não é tratada como arquivo arbitrário confiável.
+- Linux x86_64: download real com PATH contendo apenas os utilitários necessários e instalação offline em caminho com espaços/acentos passaram. Testes negativos cobrem hash incorreto, tamanho, destino existente/symlink, host incompatível e cleanup. O pin aarch64 foi preservado da CI anterior, mas não testado nativamente; Windows permanece pendente.
+- O preparador legado agora aceita `--zig` e passou os testes offline com executável externo; mantém o default antigo enquanto Python for necessário. Ambos os workflows foram migrados para chamar o Zig instalado diretamente, mas ainda dependem dos scripts e testes Python e de `yamllint`. A CI alterada ainda não foi executada remotamente.
+- Ao trocar o caminho do compilador, identificou-se que o build Zig 0.17 podia reutilizar no cache um caminho antigo embutido em `addSystemCommand`. A validação raiz usa agora `addRunFile(.zig_exe)`; foi testada com o compilador anterior temporariamente indisponível e PATH vazio, usando o cache existente.
+
+## Continuação — migração da cadeia para Zig
+
+- Inventário e critérios em `docs/PYTHON_REMOVAL.md`: sete arquivos Python, preparação das dependências legadas, testes Python e `yamllint` ainda impedem declarar Python zero. Os scripts e testes existentes não foram removidos; o guard transitório permite apenas o inventário explícito de `.py`/`.pyw` rastreados e é testado em repositório Git isolado.
+- A raiz ganhou `zig build validate` para testes nativos de tooling/Shared/Editor/Runtime, fixtures, seis recusas reais, formatação e compilação C++20 isolada dos headers com warnings rigorosos. `tools/zig` também tem `validate`, `validate-fixtures` e `validate-targets`; testes e verificações de arquivos/targets não reutilizam um sucesso em cache. Um script POSIX testa fixture válida, corrupção após sucesso, restauração e rejeição de cross-target. O `check` anterior continua compilação sem execução; validação com `-Dtarget` não nativo falha explicitamente.
+- Local Linux: `zig build validate` passou em Debug e ReleaseSafe com o executável Zig absoluto e `PATH` vazio, após preparar o cache legado com a ferramenta Python existente. Incluiu tooling **14/14**, Shared **49/49**, Editor **2/2**, Runtime **16/16**, headers e recusas reais. Testes de CLI/diferenciais e integração existentes continuam separados; não se afirma que `validate` cobre a CI inteira. Root/tooling `check` compilaram para Windows x86_64 GNU sem execução nativa; verificação nativa com target Windows foi rejeitada como planejado.
+- Os workflows adicionam o guard e testes das novas entradas sem desativar a cobertura anterior. A configuração alterada ainda não foi executada remotamente; aquela revisão usava pip; a continuação acima migra a instalação Linux para o shell, sem evidência de CI remota para a nova versão.
+
+## Continuação — fixtures Zig como verificação principal
+
+- Após as verificações em paralelo e o sucesso da CI do PR #7, o workflow passa a conferir as fixtures reais com `corex-check-fixtures` como verificador principal. O script Python não foi removido: continua sendo executado nos testes diferenciais com árvores temporárias; Python/pip ainda são necessários em outras partes da CI. A mudança do workflow ainda não foi executada remotamente.
+- A CLI Zig informa a etapa e os arquivos envolvidos nos erros de comparação, versão, backends e hash, sem despejar os dados de entrada. O teste diferencial agora cobre também duplicatas com chaves escapadas e no manifesto, ausência de dados sensíveis no diagnóstico e nomes dos arquivos em falhas; casos de divergência intencional continuam explícitos.
+- Local Linux: **13/13** testes de CLI/diferenciais para cada executável Zig em Debug e ReleaseSafe; fixtures reais aprovadas em ambos os modos, **14/14** testes de tooling em Debug/ReleaseSafe. A ferramenta e testes cross-compilaram para Windows x86_64 GNU, sem execução nativa. Verificação sintática de YAML, Zig fmt e `git diff --check` passaram localmente. Isso não estabelece equivalência exaustiva entre os verificadores.
+
+## Continuação — capturador com stdout sob pressão
+
+- O PR #7 foi integrado; as CIs remotas de contratos e core legado passaram tanto no PR ([contratos](https://github.com/CeoMatheusDev/CoreX/actions/runs/41382183799), [legado](https://github.com/CeoMatheusDev/CoreX/actions/runs/41382183867)) quanto em `main` ([contratos](https://github.com/CeoMatheusDev/CoreX/actions/runs/41382262894), [legado](https://github.com/CeoMatheusDev/CoreX/actions/runs/41382262888)). As alterações desta continuação ainda não foram executadas remotamente.
+- Com o prazo opcional ativo, o protótipo Zig agora usa `poll` antes de escrever blocos de até 4 KiB no stdout, sem alterar `O_NONBLOCK` do descritor compartilhado. O teste reproduziu um travamento anterior com o consumidor de stdout parado; agora o filho imediato é terminado e recolhido. A annotation após timeout tem janela de 100 ms e pode ficar incompleta se o consumidor não ler; se expirar durante a annotation após o filho terminar, o capturador retorna 124 e registra o motivo em stderr.
+- Linux local: **23/23** testes de CLI do protótipo em Debug e ReleaseSafe, incluindo stdout bloqueado, recuperação após pressão, annotation bloqueada e preservação dos flags do descritor. Tooling **14/14** Debug/ReleaseSafe; integração **29/29** e seis recusas reais com prazo ativado. Windows apenas cross-compilou o stub e os testes, sem execução nativa.
+- O prazo ainda não é uma garantia rígida em todos os descritores ou sob concorrência; spawn, gravação após prontidão, stderr e cleanup podem bloquear por razões do SO. Descendentes não são supervisionados. A CI mantém o capturador Python; o Zig continua experimental.
+
 ## Continuação — prazo opcional e carga do capturador Zig
 
 - O protótipo Linux aceita `COREX_CI_CAPTURE_TIMEOUT_MS` entre 1 e 86.400.000 ms; sem variável mantém o comportamento anterior. Valida a configuração antes do spawn, verifica o prazo no pipe e após EOF sem recolher prematuramente o filho, tenta SIGKILL/reap no timeout e retorna 124 com diagnóstico e annotation no Actions. Um processo que retorna 124 normalmente é distinguido pela ausência da mensagem de timeout.
@@ -181,7 +220,7 @@ O teste chamado Editor→Runtime ainda representa **papéis de consumidor dentro
 | P12 | Gameplay + aplicações | Reload C++ opcional após caminho estático, com unload seguro ou reinício explícito. |
 | P13 | Build/CI + renderer | Testes GPU e medição de desempenho/budgets. |
 | P14 | Aplicações | NFC completa e resolução segura no filesystem (links, caixa real, existência, permissão e contenção). Hoje caminhos não ASCII falham explicitamente; nenhuma normalização é presumida. |
-| P16 | Build/CI | Distribuição verificável de Zig 0.17.0 no Windows e testes nativos dos três SOs. PyPI consultado não publicou wheel Windows desta versão. Há apenas cross-compilação Windows nesta etapa. |
+| P16 | Build/CI | Distribuição verificável de Zig 0.17.0 no Windows e testes nativos de Linux e Windows. PyPI consultado não publicou wheel Windows desta versão. Há apenas cross-compilação Windows nesta etapa. |
 
 ## Próxima fatia planejada
 
