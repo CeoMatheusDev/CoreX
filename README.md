@@ -54,7 +54,7 @@ Veja [APPLICATION_PROGRESS.md](docs/APPLICATION_PROGRESS.md) para evidências, l
 
 Na raiz do repositório:
 
-\`\`\`sh
+```sh
 cd shared
 zig build test --summary all
 zig build test -Doptimize=ReleaseSafe --summary all
@@ -66,7 +66,7 @@ zig build test --summary all
 cd ../runtime
 zig build
 zig build test --summary all
-\`\`\`
+```
 
 Os diretórios editor/ e runtime/ produzem executáveis independentes e instalam os recursos de distribuição em zig-out/share/corex/. Preserve a árvore de instalação completa; copiar somente o binário não é suportado.
 
@@ -74,7 +74,7 @@ Os diretórios editor/ e runtime/ produzem executáveis independentes e instalam
 
 Depois de compilar o Runtime e o Editor, execute a partir da raiz:
 
-\`\`\`sh
+```sh
 runtime/zig-out/bin/CoreXRuntime \\
   --project docs/examples/EmptyGameV2.proj \\
   --headless --validate-only
@@ -82,16 +82,16 @@ runtime/zig-out/bin/CoreXRuntime \\
 editor/zig-out/bin/CoreXEditor \\
   --project docs/examples/EmptyGameV2.proj \\
   --headless --validate-only
-\`\`\`
+```
 
 Para verificar o Runtime a partir do Editor, informe o caminho absoluto do executável:
 
-\`\`\`sh
+```sh
 editor/zig-out/bin/CoreXEditor \\
   --project docs/examples/EmptyGameV2.proj \\
   --headless --validate-only \\
   --check-runtime "$PWD/runtime/zig-out/bin/CoreXRuntime"
-\`\`\`
+```
 
 Esses comandos verificam documento, presets, distribuição e, no último caso, o handshake entre processos. **Não carregam cenas ou assets, não criam GPU, não executam scripts e não iniciam gameplay.** O modo normal de execução falha explicitamente enquanto o adaptador do core não estiver disponível.
 
