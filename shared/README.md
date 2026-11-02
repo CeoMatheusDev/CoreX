@@ -81,7 +81,7 @@ O DTO usa membros de 4 bytes e tem 116 bytes no v1, sem packing. A escolha custa
 
 ## Cobertura e limites atuais
 
-43 testes compartilhados; resultados por modo em `docs/APPLICATION_PROGRESS.md`. Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, erros de versão, exatidão decimal, ownership, limites, 256 mutações determinísticas e falhas de alocação injetadas. Também exercitam a ABI C23 real.
+49 testes compartilhados em Linux; resultados por modo em `docs/APPLICATION_PROGRESS.md`. Incluem round-trip em memória com os papéis de Editor/Runtime, todos os presets, campos inválidos, duplicatas escapadas, erros de versão, exatidão decimal, ownership, limites, 256 mutações determinísticas e falhas de alocação injetadas. Também exercitam a ABI C23 real.
 
 Os testes Zig Editor→Runtime continuam sendo round-trip em memória. Adicionalmente, `tools/test_bootstrap.py` testa os **dois executáveis em processos reais**, apenas no escopo de validação. São 29 testes de integração locais, incluindo supervisão e JSON lines. Play de jogo, snapshots ZyntraUI e GPU real continuam não implementados.
 

@@ -36,6 +36,10 @@ def main(arguments):
             child.kill()
             child.wait()
     if status and os.environ.get("GITHUB_ACTIONS") == "true":
+        # Workflow commands are recognized only at the start of a line. The
+        # streamed child output may end without a newline (or even with CR).
+        if tail and tail[-1] != 10:
+            sys.stdout.write("\n")
         message = tail.decode("utf-8", errors="replace")
         message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         print(f"::error title=CI command failed::exit {status}: {message}", flush=True)
