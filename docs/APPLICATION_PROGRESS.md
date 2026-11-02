@@ -4,6 +4,14 @@
 
 ADR-001, `.proj` v1 e `presets.zon` v1 aprovados pelo usuário. Esta etapa libera implementação; não exige nova aprovação para cada módulo. O desenvolvimento é incremental e o escopo abaixo não equivale à entrega completa dos dois executáveis.
 
+## Continuação — input por tick e diagnóstico Zigway
+
+A branch atual partia de antes do PR #3; foi atualizada em fast-forward para a `main` que o incorporou. O trabalho de input descrito na conversa posterior ao PR não estava em Git e foi reconstituído nesta branch. Além disso, `enqueueBatch` agora valida e insere um lote inteiro ou nenhum evento, inclusive diante de capacidade insuficiente, tick passado, fora de ordem ou esgotamento de contador.
+
+- `runtime/src/tick_input.zig`: buffer genérico sobre memória do chamador, com ordem estável, capacidade explícita e begin/commit/abort. Valores são cópias superficiais; não define formato de replay nem propriedade de referências. Um teste o combina ao scheduler com dados sintéticos e falha antes de efeitos externos. Abort não reverte efeitos de gameplay.
+- Dois testes usam Zigway fixado, backend null e eventos sintéticos. Com capacidade 1, `key_down` é substituído por `key_up` sem incremento de `droppedEvents()`. É uma limitação observada no v0.1.0-alpha.4, não comportamento desejado. Upstream exige correção/contrato antes de prometer captura sem perdas. Nenhuma alteração upstream foi feita; não há teste de janela/input nativos.
+- Linux local: Runtime **16/16** e core legado **19/19** em Debug e ReleaseSafe; Shared **43/43** Debug, Editor **2/2** Debug, integração dos bootstraps **29/29**. Build Debug Editor/Runtime passou; cross Windows x86_64 GNU compilou executáveis e testes do core e Runtime, sem execução Windows. O teste legado local usou link temporário para X11 descrito abaixo. Os testes de processo não exercitam o buffer nem Zigway null; CI remota desta fatia não foi executada.
+
 ## Continuação — Event Bus síncrono do core legado
 
 - O antigo `publish` descartava o evento. O core agora oferece inscrições filtradas por ID, callbacks síncronos em ordem de registro, remoção e capacidade fixa pré-alocada. Reentrada e mutação do mesmo bus durante callback são rejeitadas; IDs inativos não são reutilizados. Contextos e payloads são emprestados e o bus não é thread-safe. Contrato e exemplo: `docs/EVENT_BUS.md`.
@@ -116,8 +124,8 @@ O teste chamado Editor→Runtime ainda representa **papéis de consumidor dentro
 | P04 (parcial) | Build/CI | Preparador com hashes verificados contorna o wrapper incorreto no cache; build e quatro testes de fumaça passaram localmente em Linux. Validar o novo workflow remoto, ampliar a cobertura legado e investigar correção upstream do Zig. |
 | P05 | Core/renderer | Device/backend real, capacidades pré-device, viewport e draw commands da UI. Backend null não é renderer real. |
 | P06 | Core/reflexão | Inspetor genérico, edição e serialização de componentes/cenas reais. |
-| P07 (parcial) | Core/jobs + aplicações | Contabilidade racional de ticks implementada e testada isoladamente; faltam loop real, replay, input/jobs integrados, política de relógio e budgets medidos. Nenhuma simulação foi implementada. |
-| P08 | Plataforma/Zigway/ZyntraUI | Superfície/input/DPI e interop Windows/Linux; melhorias upstream autorizadas, com testes e versões fixadas. macOS removido do escopo (ADR-003). |
+| P07 (parcial) | Core/jobs + aplicações | Contabilidade racional e buffer genérico de input testados isoladamente; faltam loop real, replay, input/jobs integrados, política de relógio e budgets medidos. Nenhuma simulação foi implementada. |
+| P08 | Plataforma/Zigway/ZyntraUI | Superfície/input/DPI e interop Windows/Linux; Zigway fixado pode substituir evento sem contabilizar perda, reproduzido em null. Corrigir/validar upstream antes de prometer captura sem perdas. Melhorias upstream autorizadas, com testes e versões fixadas. macOS removido do escopo (ADR-003). |
 | P09 | Core + gameplay | Header público `engine_api.h`, negociação de ABI, C++20, sol2 e VM Lua 5.4 única. DTO privado de gráficos não substitui essa API. |
 | P10/P15 (parcial) | Aplicações | CLI, logger de bootstrap, builds e filho de validação implementados. Faltam persistência atômica/backup/conflitos, logger concorrente/frame, UI real 3D/Canvas e lifecycle completo de Play. |
 | P11 | Gameplay + aplicações | Hot reload Lua transacional e chamadas protegidas, com estado migrável. |

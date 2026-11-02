@@ -23,7 +23,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev
       - run: python tools/test_prepare_legacy_deps.py
       - run: python tools/prepare_legacy_deps.py
-      - run: python -m ziglang fmt --check build.zig src/legacy_tests.zig src/jobs/job_system.zig src/events/event.zig src/main.zig src/graphics/renderer/render.zig tests/events/test_basics.zig tests/integration/engine_pipeline.zig
+      - run: python -m ziglang fmt --check build.zig src/legacy_tests.zig src/zigway_input_tests.zig src/jobs/job_system.zig src/events/event.zig src/main.zig src/graphics/renderer/render.zig tests/events/test_basics.zig tests/integration/engine_pipeline.zig
       - run: python -m ziglang build --summary all
       - run: python -m ziglang build test --summary all
       - run: python -m ziglang build test -Doptimize=ReleaseSafe --summary all
