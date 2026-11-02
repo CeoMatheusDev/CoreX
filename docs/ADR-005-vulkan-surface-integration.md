@@ -1,4 +1,4 @@
-# ADR-004: integração da janela com Vulkan Surface
+# ADR-005: integração da janela com Vulkan Surface
 
 - **Status:** bloqueado; nenhuma integração Vulkan implementada.
 - **Auditoria:** 2026-11-02.
@@ -35,7 +35,7 @@ A consulta à API do GitHub em 2026-11-02 encontrou somente releases/tags até `
 | Alternativa | Viabilidade técnica | Decisão nesta etapa |
 | --- | --- | --- |
 | Consumir uma versão futura de Zigway com integração Vulkan real | É a rota de menor duplicação se a versão expuser handles/extensões e lifecycle por janela; tal release/API não existe no upstream consultado. | Não implementável agora; aguardar API publicada e auditar API, licença, changelog, lifecycle e testes antes de atualizar pin. |
-| Alteração upstream mínima e auditada | Viável: propor API pública de informação nativa emprestada por janela, discriminada por backend (`HINSTANCE/HWND`, `Display*/XID`, `wl_display*/wl_surface*`) e extensão requerida; sem dependência Vulkan nem propriedade de Surface dentro de Zigway. Handles válidos somente enquanto janela/Platform vivem e usados na thread proprietária. CoreX cria/destrói Surface. | **Rota escolhida pelo usuário em 2026-11-02.** Preservar como proposta upstream; requer revisão/aceite e release/versionamento antes de atualizar o pin/hash. Ainda não há patch aceito nem alteração de dependência. O ambiente Linux com GPU solicitado para validação ainda não está disponível neste workspace. |
+| Alteração upstream mínima e auditada | Viável: propor API pública de informação nativa emprestada por janela, discriminada por backend (`HINSTANCE/HWND`, `Display*/XID`, `wl_display*/wl_surface*`) e extensão requerida; sem dependência Vulkan nem propriedade de Surface dentro de Zigway. Handles válidos somente enquanto janela/Platform vivem e usados na thread proprietária. CoreX cria/destrói Surface. | **Rota selecionada em 2026-11-02.** Manter como proposta upstream; requer revisão/aceite e release/versionamento antes de atualizar o pin/hash. Ainda não há patch aceito nem alteração de dependência. O ambiente Linux com GPU para validação não está disponível neste workspace. |
 | Integração complementar nativa CoreX reutilizando a janela Zigway atual | Não é viável pela API pública atual: CoreX não consegue obter os handles corretos. Inspecionar os campos privados ou inferir a janela pelo sistema operacional é inseguro. | Rejeitada enquanto a janela for criada por Zigway sem accessor público. |
 | Backend de janela nativo próprio CoreX (Win32/X11/Wayland) | Tecnicamente viável, mas substitui/bypassa Zigway e duplica criação, eventos, resize, minimização e lifecycle; X11 e Wayland exigem adaptadores distintos. | Não escolhida: maior superfície de código e divergência de janela sem necessidade demonstrada. Poderá ser reavaliada se upstream recusar a extensão mínima. |
 
@@ -43,7 +43,7 @@ A proposta upstream deve manter a infraestrutura gráfica interna CoreX sem tipo
 
 ### Auditoria do PR Zigway #8 (2026-11-02)
 
-Foi encontrado `https://github.com/CeoMatheusDev/Zigway/pull/8`, aberto, branch `arena/5951ccdd-zigway`, HEAD `29b9c1482376ab725745af25b4ac27c972ec464e`, intitulado “feat(graphics): Vulkan surface integration (v0.4.x) + Wayland docs fix”. O PR declara criação de Surface para X11, Win32 e Wayland e consulta de extensões, mas agrupa ainda OpenGL/EGL, fora do escopo mínimo escolhido. A API de release/tag não mudou: a versão publicada continua `v0.1.0-alpha.4`; o PR não tem status checks reportados e não foi aceito/mesclado. Não atualizar o pin para o branch aberto. Tentei publicar uma revisão com os diagnósticos reproduzíveis; o GitHub respondeu `Resource not accessible by integration`, então nenhum comentário/review foi publicado.
+A auditoria encontrou o [PR upstream Zigway #8](https://github.com/CeoMatheusDev/Zigway/pull/8), intitulado “feat(graphics): Vulkan surface integration (v0.4.x) + Wayland docs fix”. O PR propõe criação de Surface para X11, Win32 e Wayland e consulta de extensões, mas também inclui OpenGL/EGL, fora do escopo mínimo selecionado. Na data da auditoria, a versão/tag publicada continuava em `v0.1.0-alpha.4`; o PR ainda não havia sido aceito ou mesclado e não apresentava status checks. Não atualizar o pin para esse branch em desenvolvimento.
 
 Validação estática e pontual com Zig 0.17.0 encontrou falhas adicionais ao forçar análise dos métodos de criação de Surface (não cobertos pela suíte habitual): `VulkanSurface.native: *anyopaque` é não opcional, mas `isNull()` e caminhos de destroy comparam a `null`; `VkSurfaceKHR = opaque {}` é usado como parâmetro por valor em `DestroySurfaceKHRFn`, inválido em Zig; X11 aplica `orelse` ao campo `native_id: u64`; e Wayland aplica `orelse` ao campo `WindowEntry.surface: *wl_proxy`, também não opcional. Um teste mínimo que instancia `VulkanSurface.isNull()` falha em compilação (“comparison of '*anyopaque' with null”).
 
@@ -73,7 +73,7 @@ Esse lifecycle é orientação para a implementação futura, não uma interface
 
 ## Bloqueio de validação Vulkan neste ambiente
 
-Na continuação em `arena/c37dfcbd-corex`, Zig `0.17.0` foi executado a partir de instalação temporária em `/tmp` para validar arquivos do PR #8; o executável não foi instalado no PATH nem adicionado ao repositório. Os resultados pontuais e o bloqueio da suíte principal estão registrados acima. Os bloqueios Vulkan/host foram rechecados:
+Durante esta auditoria, Zig `0.17.0` foi executado a partir de uma instalação temporária em `/tmp` para validar arquivos do PR #8; o executável não foi instalado no PATH nem adicionado ao repositório. Os resultados pontuais e o bloqueio da suíte principal estão registrados acima. Os bloqueios Vulkan/host observados foram:
 
 - Não foi encontrado Vulkan Loader (`libvulkan.so`/`vulkan-1.dll`), header Vulkan (`vulkan.h`/`vulkan_core.h`), configuração ICD ou `vulkaninfo`.
 - Não estão disponíveis `pkg-config`/`pkgconf`, `glslangValidator`, `glslc`, `spirv-val`, `spirv-opt` ou `dxc`.

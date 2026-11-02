@@ -1,48 +1,37 @@
-# CoreX — Arquitetura Técnica
+# Arquitetura CoreX: implementado e pretendido
 
-> **Estado real da integração gráfica (2026-11-02):** a seção de pipeline abaixo descreve a arquitetura pretendida, não um caminho Vulkan funcional. `src/graphics/` contém somente Null Backend; não há Vulkan Instance, Surface, Device, Swapchain ou apresentação GPU. Editor/Runtime usam o bootstrap de `shared` e não integram hoje a janela Zigway da árvore legada. A API `.proj`/V3 não prova inicialização gráfica. Ver [ADR-004](ADR-004-vulkan-surface-integration.md).
+Este documento distingue o que existe na árvore atual do destino arquitetural. Os termos **Editor**, **Runtime** e **Renderer** não implicam, por si só, uma aplicação gráfica entregue.
 
-**Versão:** 0.1.0
-**Linguagem:** Zig 0.17.0
-**Filosofia:** Desenvolvimento próprio, baixo overhead, controle explícito de memória, modularidade.
+## Componentes atuais
 
-## Pipeline pretendido (GPU ainda não implementada)
+- **CoreXEngine legada:** a aplicação raiz e seus módulos existentes. Mantém seus contratos sem ser confundida com os novos executáveis Editor/Runtime.
+- **Shared:** contratos e componentes usados pelos módulos independentes Editor e Runtime.
+- **Editor:** CLI, abertura/preflight de projetos e descoberta de recursos. Ainda não há bootstrap gráfico, painéis integrados nem carregadores de cena/assets.
+- **Runtime:** CLI e contratos de execução/headless. Ainda não há janela de produto, renderer ou apresentação gráfica.
+- **Zigway:** dependência de plataforma e janelas através de um adaptador fino em `src/platform/zigway.zig` e `src/window/zigway.zig`.
+- **ZyntraUI:** dependência da build legada e adaptador em `src/ui/zyntra.zig`; não está ligada ao Editor/Runtime ou a um renderer.
 
-```text
-Zigway (janela, somente na árvore legada)
-  → CoreX Application (src/main.zig, executável legado)
-  → CoreX Renderer (src/graphics/renderer/render.zig)
-  → Null Backend (único backend existente; no-op/headless)
-  → sem GPU / sem apresentação
-```
+O [status](STATUS.md) resume implementação e limitações; o [índice da documentação](README.md) lista os ADRs e demais contratos.
 
-O pipeline de destino, ainda pendente, conecta uma janela com handles nativos acessíveis ao adaptador privado do Engine, que possui a Vulkan Instance/Surface/Device/Swapchain. Só após apresentação efetiva de frames a ligação Renderer→GPU poderá ser declarada. Editor e Runtime atualmente são bootstraps independentes e ainda não consomem esse Engine gráfico comum.
+## Separação entre produto e validação
 
-## Sistemas Próprios
+Editor/Runtime são organizados como componentes de produto; os bootstraps e ferramentas headless são executáveis de validação. Eles não substituem aplicações gráficas. Presets de qualidade, perfil de renderer, backend e perfil de produto/plataforma são conceitos diferentes e não devem ser inferidos uns dos outros.
 
-- **ECS** (`src/ecs/`): entidade, componente, sistema, mundo.
-- **Memory** (`src/memory/`): arena, pool, linear, frame, tracker.
-- **Job System** (`src/jobs/`): job, job_system, execução sequencial/paralela futura.
-- **Event System** (`src/events/`): event, event_bus.
-- **Scripting** (`src/scripting/`): runtime Lua 5.4.x, allocator adapter, binding, registry, sandbox, debug, profiler.
-- **Graphics** (`src/graphics/`): Renderer/DrawCommand mínimos e Null Backend no-op; nenhum passe/GPU/pipeline Vulkan funcional. A integração Vulkan está bloqueada conforme ADR-004.
-- **Platform** (`src/platform/zigway.zig`): integração Zigway v0.1.0-alpha.4.
-- **Window** (`src/window/zigway.zig`): integração Zigway.
-- **UI** (`src/ui/zyntra.zig`): integração ZyntraUI v1.44.1.
-- **Audio** (`src/audio/`): engine básico.
-- **Animation** (`src/animation/`): animação básica.
-- **Scene** (`src/scene/`): gestão de cena.
-- **Serialization** (`src/serialization/`): serializador básico.
-- **Assets** (`src/assets/`): pipeline básico.
-- **Profiler** (`src/profiler/`): profiler básico.
+Advanced, Standard e Lite são perfis de renderer independentes. Seus pipelines não são antecipados por esta arquitetura, nem selecionados implicitamente por backend, plataforma, preset ou fallback.
 
-## Dependências Externas (justificadas tecnicamente)
+## Fronteira gráfica futura
 
-- `.zigway`: Zig 0.17.0, MIT, hash verificado.
-- `.zyntra_ui`: Zig 0.17.0, MIT, hash verificado.
+A integração gráfica depende de propriedade de recursos nativos bem definida:
 
-## Qualidade
+1. O adaptador de janela cria e destrói a janela.
+2. Uma futura camada Vulkan cria e destrói a Surface associada; a Surface não destrói a janela.
+3. A camada gráfica gerencia Device, Swapchain, filas de Graphics/Present e apresentação. Graphics e Present podem exigir filas distintas.
+4. A destruição ocorre na ordem inversa das dependências: recursos de apresentação, Surface e, por fim, janela.
 
-- Compilação limpa (`zig build`).
-- Testes por subsistema (`tests/*/test_basics.zig`).
-- Contratos explícitos em todos os módulos.
+Uma implementação real precisa lidar com capacidades consultadas na Surface, `SUBOPTIMAL`, `OUT_OF_DATE`, `SURFACE_LOST`, resize, minimização/extent zero e falha do Device. Não deve aguardar o Device ocioso a cada frame nem alocar desnecessariamente no caminho quente.
+
+Até haver Surface, Device, Swapchain e apresentação efetivamente validados, essa fronteira é requisito arquitetural, não funcionalidade entregue. A decisão pendente e a dependência upstream estão em [ADR-005](ADR-005-vulkan-surface-integration.md).
+
+## Árvore arquitetural inicial
+
+`architecture/initial.md` é mantido como registro histórico da proposta inicial. Se divergir dos contratos numerados ou deste estado atual, prevalecem os ADRs e a documentação atualizada.

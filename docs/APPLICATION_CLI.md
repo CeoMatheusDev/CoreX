@@ -1,4 +1,4 @@
-> **Perfil atual (ADR-003):** Windows/Linux, autoria 3D e UI/Canvas, sem cena 2D. Reader aceita schemas [1,2,3]; novos projetos V3 selecionam explicitamente `renderer.profile`. O profile é identidade solicitada, não prova de Renderer funcional. Contrato: [PROJECT_SCHEMA_V3.md](PROJECT_SCHEMA_V3.md); bloqueio de integração Vulkan/surface: [ADR-004](ADR-004-vulkan-surface-integration.md).
+> **Perfil atual (ADR-003):** Windows/Linux, autoria 3D e UI/Canvas, sem cena 2D. Reader aceita schemas [1,2,3]; novos projetos V3 selecionam explicitamente `renderer.profile`. O profile é identidade solicitada, não prova de Renderer funcional. Contrato: [PROJECT_SCHEMA_V3.md](PROJECT_SCHEMA_V3.md); bloqueio de integração Vulkan/surface: [ADR-005](ADR-005-vulkan-surface-integration.md).
 
 # CLI das aplicações — bootstrap de validação
 

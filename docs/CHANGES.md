@@ -1,11 +1,7 @@
-# CoreX — Changelog Técnico
+# Marcos técnicos históricos
 
-## 0.1.0 — Base Compilável (2026-11-01)
-- Zigway v0.1.0-alpha.4 integrado (hash verificado)
-- ZyntraUI v1.44.1 integrado (hash verificado)
-- Renderer próprio com backend Null
-- ECS, Memory, Job System, Event System, Scripting Lua
-- Audio, Animation, Scene, Serialization, Assets, Profiler
-- Documentação arquitetural (`docs/ARCHITECTURE.md`)
-- Testes por subsistema + integração
-- `zig build` limpo
+> Este arquivo registra um snapshot inicial da árvore legada, de 2026-11-01. Não é changelog de produto, registro de release nem declaração de que os subsistemas listados estejam prontos para produção. Para mudanças de produto, consulte [`../CHANGELOG.md`](../CHANGELOG.md); para o estado atual, consulte [`STATUS.md`](STATUS.md) e [`APPLICATION_PROGRESS.md`](APPLICATION_PROGRESS.md).
+
+O protótipo inicial introduziu uma build Zig na raiz, uma demonstração com Null Renderer e arquivos de módulos preliminares para ECS, memória, jobs, eventos, scripting, áudio, animação, cenas, serialização, assets e profiling. Mais tarde, o protótipo recebeu as dependências fixadas Zigway e ZyntraUI e evoluiu separadamente das aplicações de validação Editor/Runtime.
+
+A existência de um arquivo-fonte ou demonstração neste protótipo não comprova um subsistema completo, uma API pública do Engine ou um recurso integrado ao Editor/Runtime. Em particular, esse marco não entregou backend Vulkan, apresentação nativa em GPU ou loop de jogo funcional.

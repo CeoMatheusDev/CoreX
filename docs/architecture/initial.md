@@ -1,61 +1,17 @@
-# CoreX Engine — Arquitetura Inicial
+# Proposta inicial de arquitetura (histórica)
 
-## Objetivo
-Fundação de uma Game Engine profissional em Zig 0.17.0, baseada em:
-- Data-Oriented Design (DOD)
-- Entity Component System (ECS)
-- Modularidade nativa
-- Baixo acoplamento
-- Gerenciamento explícito de memória
-- Abstrações de baixo custo
+> Este documento preserva as primeiras notas gerais de projeto do CoreX. Não é o plano de implementação atual nem um relatório de status. A arquitetura e o escopo autoritativos estão em [`../ARCHITECTURE.md`](../ARCHITECTURE.md), nos ADRs numerados e em [`../STATUS.md`](../STATUS.md).
 
-## Fases
-1. Core Foundation (atual)
-2. Platform Foundation
-3. Graphics Foundation
-4. Graphics Advanced
-5. ECS e Scene System
-6. Physics
-7. Lua Scripting
-8. Assets e Recursos
-9. Áudio e Animação
-10. Otimização
+## Objetivos originais
 
-## Estrutura de Módulos
-- core: engine lifecycle, version
-- memory: allocators, tracking, profiling
-- platform: abstração de sistema
-- window: criação e gerenciamento
-- input: teclado, mouse, gamepad
-- events: sistema de eventos
-- threading / jobs: paralelismo
-- ecs: entidades, componentes, sistemas
-- scene: carregamento de cenas
-- assets: gerenciamento de recursos
-- graphics / renderer / backends: renderização
-- physics: física própria
-- scripting / lua: runtime Lua
-- audio: áudio
-- animation: animação
-- serialization: serialização
-- project: parser .proj
-- debug / profiler: ferramentas
-- runtime: execução principal
+A proposta inicial considerava um Engine baseado em Zig, com design orientado a dados, modelo ECS, fronteiras modulares, gestão explícita de memória e abstrações de baixo overhead.
 
-## Memória
-- Arena Allocator
-- General Purpose Allocator
-- Linear Allocator
-- Pool Allocator
-- Stack Allocator
-- Frame Allocator
-- Temporary Allocator
-- Memory Tracking e Profiling
+## Conceitos registrados no primeiro esboço
 
-## Build
-- Zig 0.17.0
-- Build nativo sem framework externo pesado
-- Módulos independentes
+A proposta listava áreas separadas para ciclo de vida do core, plataforma/janela/entrada, eventos e jobs, ECS, cenas/assets, gráficos/renderização, física, scripting, áudio/animação, serialização e depuração/profiling. Também considerava estratégias de allocator e uma sequência incremental de implementação.
 
-## Dependências
-Nenhuma biblioteca externa obrigatória. APIs gráficas acessadas via bindings quando necessário.
+Esses itens descrevem apenas conceitos pretendidos. A existência de um diretório ou arquivo-fonte correspondente não confirma uma implementação completa, API pública, subsistema de produção ou integração ao Editor/Runtime.
+
+## Substituição por decisões atuais
+
+O escopo atual do produto é Windows/Linux, autoria 3D e UI/Canvas; macOS e modo de cena 2D estão fora do escopo presente. Editor e Runtime são bootstraps independentes de validação. Vulkan, apresentação nativa em GPU, execução de jogos e ciclo de vida do Engine privado compartilhado continuam pendentes. Consulte [ADR-003](../ADR-003-desktop-3d-canvas.md), [ADR-001](../ADR-001-editor-runtime.md) e [ADR-005](../ADR-005-vulkan-surface-integration.md).
