@@ -23,7 +23,9 @@ Progresso deve corresponder a trabalho concluído. Enquanto o total de recursos 
 - A CLI do Editor aceita um `.proj` posicional, como recebido em abertura por associação, além de `--project`. Dois caminhos são recusados; Runtime não ganha esse atalho. Sem projeto continua retornando erro.
 - `exemploproject/Example.proj` é um documento schema v2 real para testes de validação. Suas pastas existem, mas não há cena funcional inventada nem loader de recursos.
 - Uma tarefa Zig executa leitura e parsing do `.proj` concorrentemente, publica estágios atômicos e transfere o documento ou falha ao consumidor. Ela não é usada pela execução normal até que exista orquestração/UI real; cancelamento é cooperativo e aguarda o worker.
-- Testes Zig executam a CLI real em instalação temporária, verificam a entrada posicional e erros, e testam a tarefa concorrente. Não registram associação no SO nem criam uma janela.
+- `editor/src/project_opening.zig` experimenta uma máquina de estados para coordenar o preflight real com uma lista fixa de até 65.536 recursos. A descoberta é indeterminada; cada ticket concluído conta uma única vez e a inicialização reserva a última etapa. Falhas/cancelamento não anunciam sucesso. Os eventos de recursos e de prontidão são **sintéticos nos testes**: o coordenador depende de chamadas corretas do futuro loader e não verifica arquivos nem inicializa o Editor. Ainda não está integrado à execução normal ou a uma UI.
+- O coordenador tem dono único; snapshots não são sincronizados para acesso concorrente. `cancel` e `deinit` aguardam o worker, e até a coleta após estágio terminal pode aguardar o término da thread: integrar com UI exigirá uma estratégia sem bloquear o loop de eventos.
+- Testes Zig executam a CLI real em instalação temporária, verificam a entrada posicional e erros, e testam a tarefa concorrente e invariantes do coordenador. Não registram associação no SO nem criam uma janela.
 
 ## Pendências para cumprir o requisito
 
