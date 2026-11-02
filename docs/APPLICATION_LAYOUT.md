@@ -65,6 +65,7 @@ CoreX/
 ├── tools/
 │   └── python/                     # [atual] ferramentas auxiliares isoladas; fora do runtime
 │       ├── README.md               # política de isolamento e comandos
+│       ├── check_tooling_boundary.py # guarda a fronteira de dependências
 │       ├── requirements-zig.txt    # Zig 0.17.0 fixado por versão e hashes
 │       ├── prepare_legacy_deps.py  # cache de pacotes Zig com hashes verificados
 │       ├── test_prepare_legacy_deps.py # testes offline do extrator TAR
