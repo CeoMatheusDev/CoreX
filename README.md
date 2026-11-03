@@ -1,6 +1,3 @@
-Aqui está o README atualizado, pronto para copiar:
-
-```markdown
 <p align="center">
   <img src="assets/Logo minimalista COREX ENGINE.png" alt="CoreX Engine logo" width="720">
 </p>
