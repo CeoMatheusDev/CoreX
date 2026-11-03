@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Added `scene/ecs/transform2d.zig`: 2D affine transform hierarchy with rotation and scale via fixed-point Q16.16 integer math (deterministic, no floats in the hot path). `Mat2x3` (2x3 matrix with 360-entry sin/cos LUT), `LocalTransform2D`/`WorldTransform2D` components, `propagateTransforms2D` composing parent world × local. Scene tests: 79/79.
 - Extended `scene/ecs/query.zig` with NOT exclusions: `each`/`count`/`Iterator` now take a second tuple `NotT` of excluded component types (e.g. `each(WorldT, world, .{Position}, .{Velocity}, cb)` matches entities with Position but without Velocity). Scene tests: 74/74.
 - Added `scene/ecs/transform.zig`: transform hierarchy with `LocalTransform` and `WorldTransform` components, propagated through the parent/child graph via `propagateTransforms` (roots: world=local; children: world=parent.world+local). Built on `hierarchy.zig`, no World changes. Scene tests: 72/72.
 - Added `scene/ecs/query.zig`: allocation-free multi-component queries (`each`, `Iterator`, `count`) over any `World(StoresT)`. The first type in the query tuple drives iteration (put the rarest component first); remaining types are probed with O(1) sparse-set lookups. Scene tests: 68/68.
