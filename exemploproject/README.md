@@ -1,4 +1,13 @@
-# Example project
+# CoreX Example Project
+
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
+
+A minimal CoreX project document used to exercise project discovery and validation.
+
+> [!NOTE]
+> The sample directories are organizational placeholders, not loadable scenes, assets, or scripts.
+
+---
 
 `Example.proj` is a CoreX schema v2 project document for exercising project discovery and validation. The `scenes/`, `assets/`, and `scripts/` directories are organizational starting points; their README files are documentation, not loadable game content.
 
