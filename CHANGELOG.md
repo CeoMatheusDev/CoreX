@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Added `scene/ecs/transform.zig`: transform hierarchy with `LocalTransform` and `WorldTransform` components, propagated through the parent/child graph via `propagateTransforms` (roots: world=local; children: world=parent.world+local). Built on `hierarchy.zig`, no World changes. Scene tests: 72/72.
 - Added `scene/ecs/query.zig`: allocation-free multi-component queries (`each`, `Iterator`, `count`) over any `World(StoresT)`. The first type in the query tuple drives iteration (put the rarest component first); remaining types are probed with O(1) sparse-set lookups. Scene tests: 68/68.
 - Added `scene/ecs/hierarchy.zig`: parent/child entity hierarchy as regular `SparseSet` components (`Parent`, `Children`) with cycle-safe reparenting, root detection, and `onDestroy` child reparenting to the grandparent. Any `World(Stores)` declaring these components gets hierarchy. Scene tests: 65/65.
 - Added `scene/content_serializer.zig`: deterministic JSON serializer that writes any `World(StoresT)` back to the content-scene format (entities in index order, components in store declaration order). Round-trips with `content_loader` (load → serialize → load preserves state). Replaced the `Scene.saveDescriptor` stub with the real implementation. Scene tests: 60/60.
