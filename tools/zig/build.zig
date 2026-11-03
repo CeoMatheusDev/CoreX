@@ -19,6 +19,20 @@ fn captureCliTest(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     return b.addTest(.{ .root_module = module });
 }
 
+fn bootstrapCliTest(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.Optimize, probe_exe: *std.Build.Step.Compile, shared_module: *std.Build.Module, repository_root: []const u8) *std.Build.Step.Compile {
+    const opts = b.addOptions();
+    opts.addOptionPath("probe", probe_exe.getEmittedBin());
+    opts.addOption([]const u8, "repository_root", repository_root);
+    // The bootstraps are built in their own packages; these paths must point at
+    // real, already-built executables. Nothing here rebuilds or downloads them.
+    opts.addOption([]const u8, "editor", b.option([]const u8, "editor-bin", "Prebuilt CoreXEditor used by test-bootstrap-cli") orelse b.fmt("{s}/editor/zig-out/bin/CoreXEditor", .{repository_root}));
+    opts.addOption([]const u8, "runtime", b.option([]const u8, "runtime-bin", "Prebuilt CoreXRuntime used by test-bootstrap-cli") orelse b.fmt("{s}/runtime/zig-out/bin/CoreXRuntime", .{repository_root}));
+    const module = b.createModule(.{ .root_source_file = b.path("test_bootstrap_cli.zig"), .target = target, .optimize = optimize });
+    module.addOptions("bootstrap_cli_options", opts);
+    module.addImport("corex_app", shared_module);
+    return b.addTest(.{ .root_module = module });
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -55,6 +69,10 @@ pub fn build(b: *std.Build) void {
     versioning_cli_module.addOptions("versioning_cli_options", versioning_cli_options);
     versioning_cli_module.addImport("corex_app", shared.module("corex_app"));
     const versioning_cli_tests = b.addTest(.{ .root_module = versioning_cli_module });
+    const probe_module = b.createModule(.{ .root_source_file = b.path("bootstrap_probe.zig"), .target = target, .optimize = optimize });
+    const probe_exe = b.addExecutable(.{ .name = "corex-bootstrap-probe", .root_module = probe_module });
+    b.installArtifact(probe_exe);
+    const bootstrap_cli_tests = bootstrapCliTest(b, target, optimize, probe_exe, shared.module("corex_app"), repository_root);
     const install_extractor = b.step("install-extractor", "Install only the pinned legacy archive extractor");
     install_extractor.dependOn(&b.addInstallArtifact(extractor_exe, .{}).step);
     const run_tests = b.step("test", "Run tooling unit and black-box tests");
@@ -83,6 +101,17 @@ pub fn build(b: *std.Build) void {
         capture_cli_step.dependOn(&run_capture_cli.step);
     }
     run_tests.dependOn(&b.addRunArtifact(extractor_tests).step);
+    const run_bootstrap_cli = b.addRunArtifact(bootstrap_cli_tests);
+    run_bootstrap_cli.setCwd(b.path("."));
+    run_bootstrap_cli.has_side_effects = true;
+    const bootstrap_cli_step = b.step("test-bootstrap-cli", "Run native black-box integration tests of the Editor and Runtime");
+    if (!target.query.isNative()) {
+        bootstrap_cli_step.dependOn(&b.addFail("test-bootstrap-cli is native-only; omit -Dtarget and -Dcpu").step);
+    } else if (target.result.os.tag == .windows) {
+        bootstrap_cli_step.dependOn(&b.addFail("test-bootstrap-cli requires a native POSIX host").step);
+    } else {
+        bootstrap_cli_step.dependOn(&run_bootstrap_cli.step);
+    }
     run_tests.dependOn(&b.addRunArtifact(versioning_tests).step);
     const run_versioning_cli_tests = b.addRunArtifact(versioning_cli_tests);
     run_versioning_cli_tests.setCwd(b.path("."));
@@ -153,4 +182,6 @@ pub fn build(b: *std.Build) void {
     check.dependOn(&versioning_exe.step);
     check.dependOn(&versioning_tests.step);
     check.dependOn(&versioning_cli_tests.step);
+    check.dependOn(&bootstrap_cli_tests.step);
+    check.dependOn(&probe_exe.step);
 }

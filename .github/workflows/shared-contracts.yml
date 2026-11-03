@@ -115,6 +115,12 @@ jobs:
         run: |
           cd editor && "$CI_CAPTURE" "$ZIG_EXE" build --summary all
           cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build --summary all
+      # Native Zig port of tools/test_bootstrap.py. The Python reference stays in
+      # CI until this port is validated remotely and reaches full parity.
+      - name: Test real processes with native Zig probes (Debug; validation only)
+        working-directory: tools/zig
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build test-bootstrap-cli -j2 --summary all
       - name: Verify manifest reproducibility and Editor/Runtime parity
         run: |
           set -eu
@@ -145,6 +151,10 @@ jobs:
         run: |
           cd editor && "$CI_CAPTURE" "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
           cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
+      - name: Test real processes with native Zig probes (ReleaseSafe; validation only)
+        working-directory: tools/zig
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build test-bootstrap-cli -Doptimize=ReleaseSafe -j2 --summary all
       - name: Test runtime accounting (ReleaseSafe)
         working-directory: runtime
         run: |

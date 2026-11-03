@@ -2,7 +2,7 @@
 
 ![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
 
-Native repository tooling built with Zig 0.17.0 for fixture validation, target-policy checks, version metadata, dependency preparation, and CI output capture.
+Native repository tooling built with Zig 0.17.0 for fixture validation, target-policy checks, version metadata, dependency preparation, CI output capture, and Editor/Runtime integration tests.
 
 > [!NOTE]
 > These tools validate contracts and policy. They do not establish native-window, graphics, or GPU support.
@@ -98,3 +98,19 @@ Target validation in CI now uses this Zig tool; the corresponding Python checker
 `corex-ci-capture` is the Linux implementation used by the contracts workflow as a gradual replacement for the Python capture tool. The changed workflow still requires remote validation. See [`../CI_CAPTURE.md`](../CI_CAPTURE.md) for the protocol, tests, and limitations.
 
 Windows is not implemented for this capture tool; a cross-compiled stub is not native support. `zig build test-capture-cli` runs 11 native Linux black-box tests without Python and is also part of `zig build test` and `zig build validate`. The dedicated step rejects cross-targets and non-Linux hosts; `check` only compiles for cross-targets. Tests use `/bin/sh`, `/bin/sleep`, and Linux `/proc` for probes and cleanup checks. They cover only part of the Python reference cases, so Python remains required in CI during the transition.
+
+## Editor and Runtime integration tests
+
+`zig build test-bootstrap-cli` is the native Zig port of `tools/test_bootstrap.py`. It launches the real `CoreXEditor` and `CoreXRuntime` executables in separate processes and checks the JSONL protocol on both pipes, exit codes, distribution relocation/tampering, project and schema contracts, deadlines, capture limits, signal-resistant children, and process cleanup.
+
+```sh
+(cd editor && zig build)
+(cd runtime && zig build)
+(cd tools/zig && zig build test-bootstrap-cli -j2 --summary all)
+```
+
+Both bootstraps must be built first; this step never rebuilds or downloads them. `-Deditor-bin` and `-Druntime-bin` select different executables, and `-Drepository-root` selects another checkout. The step is native-only and rejects cross targets and Windows hosts. `zig build check` still compiles the tests for cross targets without running them.
+
+The Python shebang probes are replaced by `bootstrap_probe.zig`, a test-only executable that emits controlled JSONL and misbehaves on purpose (fragmented records, duplicated sequence numbers, output floods, a TERM-resistant child, `exec` into the real Runtime). Because the Editor only launches an explicitly selected absolute executable and forwards no extra arguments, the probe reads its mode from a `<project>.probe` sidecar file and records its PID in `<project>.pid` so the test can assert the child was killed and reaped.
+
+`test-bootstrap-cli` is not part of `zig build validate`, because validation runs before the applications exist. It is not part of `zig build test` either: it needs the compiled applications and a POSIX host. The Python suite remains in CI until this port is validated remotely and any remaining differences are resolved.
