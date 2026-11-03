@@ -4,6 +4,8 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Connected read-only content hierarchy to the headless Runtime. Parent handles and ordered children contribute to a versioned checksum extension, while smoke/flat checksums remain unchanged; child slices are freed on success and error. No 3D transform loading or propagation is implied.
+- Replaced headless position and age arithmetic traps with checked `PositionOverflow` / `AgeOverflow` errors; a failed tick is not transactional and the run stops without a final report.
 - Restored the original `markDirty` ancestor markers and best-effort void behavior. Added a checked ancestor-marking API while preserving subtree-only `tryMarkDirty`, with retry, cycle, OOM and allocation-free repeat coverage.
 - Extended content-scene JSON with optional parent and sibling file indices. Round-trip preserves generational handle remapping and child order; forward parents, cycles, malformed links, allocator failure and cleanup are covered. Flat descriptors remain unchanged; older strict parsers cannot read the new fields.
 - Fixed dirty 3D propagation for reversed entity order and overlapping marks; added fallible/retryable APIs while retaining the original void signatures. Empty propagation allocates nothing; work includes affected subtrees and ancestor walks, not a general O(dirty) bound.

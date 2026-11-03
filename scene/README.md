@@ -56,7 +56,7 @@ const json = try corex_scene.content_serializer.serialize(Stores, allocator, &wo
 defer allocator.free(json);
 ```
 
-`Scene.loadWorld` e `scene.loader.Loader.loadWorld` são APIs legadas ainda não ligadas a esse caminho de conteúdo; não as use como carregadores de conteúdo. O Runtime headless aceita `--scene` apenas com os componentes planos `position`, `velocity` e `age`, sem hierarquia, até integrar stores e systems apropriados.
+`Scene.loadWorld` e `scene.loader.Loader.loadWorld` são APIs legadas ainda não ligadas a esse caminho de conteúdo; não as use como carregadores de conteúdo. O Runtime headless usa `content_loader` em modo somente leitura, com componentes escalares `position`, `velocity`, `age` e hierarquia opcional. Os vínculos são preservados e entram no checksum, mas não há carregamento ou propagação de transforms 3D; os systems não herdam posições dos pais.
 
 ## Transforms dirty
 
