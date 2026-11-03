@@ -8,6 +8,7 @@ pub const systems = @import("ecs/systems.zig");
 pub const hierarchy = @import("ecs/hierarchy.zig");
 pub const query = @import("ecs/query.zig");
 pub const transform = @import("ecs/transform.zig");
+pub const transform2d = @import("ecs/transform2d.zig");
 pub const scene = @import("scene.zig");
 pub const format = @import("format.zig");
 pub const loader = @import("loader.zig");
@@ -33,6 +34,8 @@ test {
     _ = @import("ecs/systems.zig");
     _ = @import("ecs/hierarchy.zig");
     _ = @import("ecs/query.zig");
+    _ = @import("ecs/transform.zig");
+    _ = @import("ecs/transform2d.zig");
     _ = @import("scene.zig");
     _ = @import("content_format.zig");
     _ = @import("content_loader.zig");
