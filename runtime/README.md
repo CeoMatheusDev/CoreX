@@ -5,7 +5,7 @@
 Standalone Zig 0.17.0 + C23 project-validation bootstrap plus a deterministic headless frame loop. It validates project configuration and, when explicitly asked with `--frames`, executes a smoke scene or a limited JSON content scene through the Core lifecycle and Scene ECS, without a window or GPU; it does not execute games.
 
 > [!NOTE]
-> Current capability: configuration validation and a deterministic headless frame loop (`--frames`) over a smoke scene or an explicitly supplied flat content scene. No gameplay, window, graphics device or presented frame.
+> Current capability: configuration validation and a deterministic headless frame loop (`--frames`) over a smoke scene or an explicitly supplied, read-only content scene with optional hierarchy. No gameplay, window, graphics device or presented frame.
 
 ---
 
@@ -49,7 +49,7 @@ runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headle
 
 This is the Runtime's first real executor. `--frames` is Runtime-only, requires `--headless`, and cannot be combined with `--validate-only` or `--check-runtime`. It accepts 1 to 1 000 000 decimal frames; `0`, out-of-range and non-decimal values are CLI errors (exit code 2).
 
-To load a content descriptor instead of the embedded smoke scene, append `--scene path/to/scene.json`. The path is relative to the working directory or absolute; `--scene` requires `--headless --frames N` and is Runtime-only. Input is limited to 4 MiB. The current Runtime stores do **not** include hierarchy, so descriptors with parent links fail with `HierarchyUnsupported`; the generic Scene library supports those links independently. See the [Scene format and ownership notes](../scene/README.md#hierarquia-e-cenas-de-conteúdo).
+To load a content descriptor instead of the embedded smoke scene, append `--scene path/to/scene.json`. The path is relative to the working directory or absolute; `--scene` requires `--headless --frames N` and is Runtime-only. Input is limited to 4 MiB and is never written by the Runtime. Optional `parent_index` and `sibling_index` fields load parent/child links and preserve sibling order, including forward references; invalid indices, ordering and cycles are rejected. See the [Scene format and ownership notes](../scene/README.md#hierarquia-e-cenas-de-conteúdo).
 
 `src/run_mode.zig` builds a `corex_core` `Registry` with three subsystems (`runtime.input`, `runtime.scene`, `runtime.ledger`) and drives them with the existing fixed-step scheduler:
 
@@ -60,9 +60,11 @@ To load a content descriptor instead of the embedded smoke scene, append `--scen
 - `runtime.ledger` rejects discontinuous step indices, a changing step duration and subsystem reuse;
 - four independent counters (`steps`, scheduler `ticks`, `input_ticks`, ledger steps) must agree, otherwise the run fails with `error.AccountingMismatch` before anything is reported.
 
-The allocator comes from `main` through `Runner.context` and is used only for setup/teardown; the tick path performs no allocation and reads no wall clock, so the same frame count always produces the same report. `Report` and `shared.bootstrap.RunReport` add `entities_alive` and `state_checksum`; the latter is FNV-1a 64 over entity handles and component presence/values in increasing entity-index order. The executor emits `runtime.run_starting` and `runtime.run_complete` (or `runtime.run_failed`, exit code 70), with `scene="smoke"` by default or `scene="content"` when `--scene` is used, plus `gpu_created=false`, `window_created=false`, `presented_frames=0` and `play_started=false`.
+The allocator comes from `main` through `Runner.context` and is used only for setup/teardown; child lists are cleared before the World on success and failure. The tick path performs no allocation and reads no wall clock. `Report` and `shared.bootstrap.RunReport` expose `entities_alive` and `state_checksum`. The checksum is FNV-1a 64 over entity handles and component presence/values in increasing entity-index order. Smoke and flat scenes retain their previous checksums. When hierarchy components are present, a domain-separated `corex.hierarchy.v1\0` suffix includes each entity's parent handle, child count and ordered child handles, including generations. Integers retain the existing host-endian encoding; this is not a portable cryptographic hash.
 
-Limits: the content-scene path supports only the Runtime's `position`, `velocity` and `age` stores. It does not load hierarchy, assets, scripts or prefabs, and there is no runtime export, job queue, real input, window, Vulkan device or presented frame. `--frames` proves fixed-step accounting, lifecycle, teardown, ECS state and determinism; it is not Play, gameplay or evidence of a renderer. The Editor rejects `--frames` and still reports `application.core_unavailable` for execution requests.
+The executor emits `runtime.run_starting` and `runtime.run_complete` (or `runtime.run_failed`, exit code 70), with `scene="smoke"` by default or `scene="content"` when `--scene` is used, plus `gpu_created=false`, `window_created=false`, `presented_frames=0` and `play_started=false`. Checked additions return `PositionOverflow` or `AgeOverflow` rather than trapping on extreme content. Both coordinates are checked before updating an entity, but the whole tick is not transactional: earlier updates may already have occurred. The failed run is stopped and its state discarded, not retried or reported as complete.
+
+Limits: content supports the Runtime's scalar `position`, `velocity` and `age` stores plus parent/child links. It does not load or propagate 3D transforms: positions are independent of parent links. Assets, scripts, prefabs, runtime export, a job queue, real input, window, Vulkan device and presented frames remain unavailable. `--frames` proves fixed-step accounting, lifecycle, teardown, ECS state and determinism; it is not Play, gameplay or evidence of a renderer. The Editor rejects `--frames` and still reports `application.core_unavailable` for execution requests.
 
 ## Time scheduler (not integrated into gameplay)
 

@@ -153,6 +153,9 @@ pub fn run(allocator: std.mem.Allocator, request: Request) anyerror!Report {
 
     var smoke = try headless_app.init(allocator);
     defer smoke.deinit();
+    // World owns its stores, not the child slices inside Children. This runs
+    // on success and every error path, before the Scene frees its World.
+    defer scene.hierarchy.clear(headless_app.World, smoke.world().allocator, smoke.world());
     try headless_app.installSystems(&smoke);
 
     var registry = core.subsystem.Registry(3){};
@@ -233,6 +236,11 @@ test "smoke scene state is deterministic and changes with the tick count" {
     const third = try run(testing.allocator, .{ .frames = 121 });
     try testing.expectEqual(headless_app.initial_entities, first.entities_alive);
     try testing.expectEqualDeep(first, second);
+    // The optional hierarchy extension must not change the published checksum
+    // of the original smoke scene (whose integer encoding is host-endian).
+    if (@import("builtin").cpu.arch.endian() == .little) {
+        try testing.expectEqual(@as(u64, 4676086859710612434), first.state_checksum);
+    }
     try testing.expect(third.state_checksum != first.state_checksum);
     try testing.expectEqual(first.entities_alive, third.entities_alive);
 }
@@ -258,6 +266,9 @@ test "content scene loads from file and runs deterministically" {
     const second = try run(testing.allocator, .{ .frames = 10, .scene_path = path, .io = test_io });
     try testing.expectEqual(@as(u32, 2), first.entities_alive);
     try testing.expectEqualDeep(first, second);
+    if (@import("builtin").cpu.arch.endian() == .little) {
+        try testing.expectEqual(@as(u64, 10243271093082382682), first.state_checksum);
+    }
     try testing.expect(first.state_checksum != 0);
 
     // A different frame count produces a different checksum.
@@ -335,4 +346,131 @@ test "scene systems run for many ticks with no allocation and reach a real final
         try testing.expectEqual(@as(i64, @as(i64, entity_index) * 20) + velocity.y * 100, position.y);
     }
     try testing.expectEqual(headless_app.initial_entities, alive);
+}
+
+const TestSceneFile = struct {
+    tmp: testing.TmpDir,
+    path: []u8,
+
+    fn init() !TestSceneFile {
+        var tmp = testing.tmpDir(.{});
+        errdefer tmp.cleanup();
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const len = try tmp.dir.realPath(testing.io, &buffer);
+        const path = try std.fs.path.join(testing.allocator, &.{ buffer[0..len], "content.scene" });
+        return .{ .tmp = tmp, .path = path };
+    }
+
+    fn write(self: *TestSceneFile, content: []const u8) !void {
+        try self.tmp.dir.writeFile(testing.io, .{ .sub_path = "content.scene", .data = content });
+    }
+
+    fn deinit(self: *TestSceneFile) void {
+        testing.allocator.free(self.path);
+        self.tmp.cleanup();
+    }
+};
+
+test "headless content hierarchy is deterministic and affects the state checksum" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    const first_json =
+        \\{"entities":[{"parent_index":3,"sibling_index":1,"components":[{"kind":"position","x":1},{"kind":"velocity","x":2}]},{"parent_index":3,"sibling_index":0},{"parent_index":0,"components":[{"kind":"age","ticks":2}]},{}]}
+    ;
+    const reversed_json =
+        \\{"entities":[{"parent_index":3,"sibling_index":0,"components":[{"kind":"position","x":1},{"kind":"velocity","x":2}]},{"parent_index":3,"sibling_index":1},{"parent_index":0,"components":[{"kind":"age","ticks":2}]},{}]}
+    ;
+    const flat_json =
+        \\{"entities":[{"components":[{"kind":"position","x":1},{"kind":"velocity","x":2}]},{},{"components":[{"kind":"age","ticks":2}]},{}]}
+    ;
+    const request: Request = .{ .frames = 60, .scene_path = fixture.path, .io = testing.io };
+    try fixture.write(first_json);
+    const first = try run(testing.allocator, request);
+    const repeat = try run(testing.allocator, request);
+    try testing.expectEqual(@as(u32, 4), first.entities_alive);
+    try testing.expectEqualDeep(first, repeat);
+    try fixture.write(reversed_json);
+    const reordered = try run(testing.allocator, request);
+    try testing.expect(first.state_checksum != reordered.state_checksum);
+    try fixture.write(flat_json);
+    const flat = try run(testing.allocator, request);
+    try testing.expect(first.state_checksum != flat.state_checksum);
+}
+
+test "headless content rejects invalid hierarchy and raw hierarchy components" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    const cases = [_]struct { json: []const u8, expected: anyerror }{
+        .{ .json = "{\"entities\":[{\"parent_index\":1},{\"parent_index\":0}]}", .expected = error.CycleDetected },
+        .{ .json = "{\"entities\":[{\"parent_index\":9}]}", .expected = error.InvalidParentIndex },
+        .{ .json = "{\"entities\":[{},{\"parent_index\":0,\"sibling_index\":1}]}", .expected = error.InvalidSiblingIndex },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"parent\"}]}]}", .expected = error.InvalidHierarchyComponent },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"children\"}]}]}", .expected = error.InvalidHierarchyComponent },
+    };
+    for (cases) |case| {
+        try fixture.write(case.json);
+        try testing.expectError(case.expected, run(testing.allocator, .{ .frames = 1, .scene_path = fixture.path, .io = testing.io }));
+    }
+}
+
+test "tick overflow after hierarchy loading reports an error and cleans up" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    const cases = [_]struct { json: []const u8, expected: anyerror }{
+        .{ .json = "{\"entities\":[{},{\"parent_index\":0,\"components\":[{\"kind\":\"age\",\"ticks\":18446744073709551615}]}]}", .expected = error.AgeOverflow },
+        .{ .json = "{\"entities\":[{},{\"parent_index\":0,\"components\":[{\"kind\":\"position\",\"x\":9223372036854775807},{\"kind\":\"velocity\",\"x\":1}]}]}", .expected = error.PositionOverflow },
+    };
+    for (cases) |case| {
+        try fixture.write(case.json);
+        try testing.expectError(case.expected, run(testing.allocator, .{ .frames = 1, .scene_path = fixture.path, .io = testing.io }));
+    }
+}
+
+test "headless hierarchy loading cleans up for every allocation failure" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    // Exceed the initial 16 slots to exercise rollback across growth of every
+    // sparse store, and use both a wide list and a nested child list.
+    var json: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer json.deinit();
+    try json.writer.writeAll("{\"entities\":[");
+    for (0..24) |index| {
+        if (index != 0) try json.writer.writeByte(',');
+        if (index == 23) {
+            try json.writer.writeAll("{\"components\":[{\"kind\":\"position\",\"x\":5}]}");
+        } else {
+            try json.writer.print("{{\"parent_index\":{d}}}", .{if (index == 1) @as(u32, 0) else 23});
+        }
+    }
+    try json.writer.writeAll("]}");
+    try fixture.write(json.written());
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator, path: []const u8) !void {
+            const report = try run(allocator, .{ .frames = 2, .scene_path = path, .io = testing.io });
+            try testing.expectEqual(@as(u32, 24), report.entities_alive);
+        }
+    }.probe, .{fixture.path});
+}
+
+test "headless hierarchy handles a deep forward-referenced scene" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    var json: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer json.deinit();
+    const count = 5000;
+    try json.writer.writeAll("{\"entities\":[");
+    for (0..count) |index| {
+        if (index != 0) try json.writer.writeByte(',');
+        if (index + 1 == count) {
+            try json.writer.writeAll("{}");
+        } else {
+            try json.writer.print("{{\"parent_index\":{d}}}", .{index + 1});
+        }
+    }
+    try json.writer.writeAll("]}");
+    try fixture.write(json.written());
+    const report = try run(testing.allocator, .{ .frames = 2, .scene_path = fixture.path, .io = testing.io });
+    try testing.expectEqual(@as(u32, count), report.entities_alive);
+    try testing.expectEqual(@as(u64, 2), report.ticks);
+    try testing.expect(report.state_checksum != 0);
 }

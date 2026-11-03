@@ -937,6 +937,9 @@ test "headless run executes the core loop without a window or gpu" {
     try expectIntField(complete, "phase_remainder", 2_400);
     try expectTextField(complete, "scene", "smoke");
     try expectIntField(complete, "entities_alive", 8);
+    if (builtin.cpu.arch.endian() == .little) {
+        try std.testing.expectEqual(@as(u64, 4676086859710612434), try uintField(complete, "state_checksum"));
+    }
     try std.testing.expect((try uintField(complete, "state_checksum")) != 0);
     try expectIntField(complete, "presented_frames", 0);
     try expectBoolField(complete, "play_started", false);
@@ -1009,6 +1012,9 @@ test "runtime loads a flat content scene read-only and deterministically" {
     try expectIntField(first_complete, "entities_alive", 2);
     try expectIntField(first_complete, "frames", 60);
     try expectBoolField(first_complete, "gpu_created", false);
+    if (builtin.cpu.arch.endian() == .little) {
+        try std.testing.expectEqual(@as(u64, 7028052042953051678), try uintField(first_complete, "state_checksum"));
+    }
 
     var second = Run.init();
     defer second.deinit();
@@ -1022,20 +1028,100 @@ test "runtime loads a flat content scene read-only and deterministically" {
     try std.testing.expectEqualStrings(scene, bytes);
 }
 
-test "runtime rejects content hierarchy rather than discarding links" {
+test "runtime loads hierarchy read-only and reports its deterministic ordered state" {
     try requirePosix();
     var f = try Fixture.init();
     defer f.deinit();
-    const scene_path = try std.fs.path.join(a, &.{ f.directory, "hierarquia.scene" });
-    defer a.free(scene_path);
-    try Io.Dir.cwd().writeFile(io, .{ .sub_path = scene_path, .data = "{\"entities\":[{},{\"parent_index\":0}]}" });
-    var run = Run.init();
-    defer run.deinit();
-    try f.runApp(&run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "1", "--scene", scene_path }, .{ .expected = 70 });
-    const failed = try run.event("runtime.run_failed");
-    try expectTextField(failed, "code", "HierarchyUnsupported");
-    try expectBoolField(failed, "gpu_created", false);
-    try std.testing.expectEqual(@as(usize, 0), run.countOf("runtime.run_complete"));
+    const path = try std.fs.path.join(a, &.{ f.directory, "hierarchy.scene" });
+    defer a.free(path);
+    const source =
+        \\{"entities":[{"parent_index":3,"sibling_index":1,"components":[{"kind":"position","x":1},{"kind":"velocity","x":2}]},{"parent_index":3,"sibling_index":0},{"parent_index":0,"components":[{"kind":"age","ticks":2}]},{}]}
+    ;
+    const reversed =
+        \\{"entities":[{"parent_index":3,"sibling_index":0,"components":[{"kind":"position","x":1},{"kind":"velocity","x":2}]},{"parent_index":3,"sibling_index":1},{"parent_index":0,"components":[{"kind":"age","ticks":2}]},{}]}
+    ;
+    const reparented =
+        \\{"entities":[{"parent_index":3,"sibling_index":1,"components":[{"kind":"position","x":1},{"kind":"velocity","x":2}]},{"parent_index":3,"sibling_index":0},{"parent_index":1,"components":[{"kind":"age","ticks":2}]},{}]}
+    ;
+    try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = source });
+    const before = try Io.Dir.cwd().statFile(io, path, .{});
+    var first = Run.init();
+    defer first.deinit();
+    try f.runApp(&first, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "60", "--scene", path }, .{ .expected = 0 });
+    const complete = try first.event("runtime.run_complete");
+    try expectTextField(complete, "scene", "content");
+    try expectIntField(complete, "entities_alive", 4);
+    try expectIntField(complete, "ticks", 60);
+    try expectBoolField(complete, "gpu_created", false);
+    const original_checksum = try uintField(complete, "state_checksum");
+    const after = try Io.Dir.cwd().statFile(io, path, .{});
+    try std.testing.expectEqual(before.size, after.size);
+    try std.testing.expectEqual(before.mtime.nanoseconds, after.mtime.nanoseconds);
+    const retained = try Io.Dir.cwd().readFileAlloc(io, path, a, .limited(source.len + 1));
+    defer a.free(retained);
+    try std.testing.expectEqualStrings(source, retained);
+
+    var repeat = Run.init();
+    defer repeat.deinit();
+    try f.runApp(&repeat, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "60", "--scene", path }, .{ .expected = 0 });
+    try std.testing.expectEqual(original_checksum, try uintField(try repeat.event("runtime.run_complete"), "state_checksum"));
+
+    try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = reversed });
+    var reorder_run = Run.init();
+    defer reorder_run.deinit();
+    try f.runApp(&reorder_run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "60", "--scene", path }, .{ .expected = 0 });
+    try std.testing.expect(original_checksum != try uintField(try reorder_run.event("runtime.run_complete"), "state_checksum"));
+
+    try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = reparented });
+    var reparent_run = Run.init();
+    defer reparent_run.deinit();
+    try f.runApp(&reparent_run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "60", "--scene", path }, .{ .expected = 0 });
+    try std.testing.expect(original_checksum != try uintField(try reparent_run.event("runtime.run_complete"), "state_checksum"));
+}
+
+test "runtime returns structured errors for invalid content hierarchy" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    const path = try std.fs.path.join(a, &.{ f.directory, "invalid_hierarchy.scene" });
+    defer a.free(path);
+    const cases = [_]struct { json: []const u8, code: []const u8 }{
+        .{ .json = "{\"entities\":[{\"parent_index\":1},{\"parent_index\":0}]}", .code = "CycleDetected" },
+        .{ .json = "{\"entities\":[{\"parent_index\":9}]}", .code = "InvalidParentIndex" },
+        .{ .json = "{\"entities\":[{},{\"parent_index\":0,\"sibling_index\":1}]}", .code = "InvalidSiblingIndex" },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"parent\"}]}]}", .code = "InvalidHierarchyComponent" },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"children\"}]}]}", .code = "InvalidHierarchyComponent" },
+    };
+    for (cases) |case| {
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = case.json });
+        var run = Run.init();
+        defer run.deinit();
+        try f.runApp(&run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "1", "--scene", path }, .{ .expected = 70 });
+        try expectTextField(try run.event("runtime.run_failed"), "code", case.code);
+        try std.testing.expectEqual(@as(usize, 0), run.countOf("runtime.run_complete"));
+        const retained = try Io.Dir.cwd().readFileAlloc(io, path, run.allocator(), .limited(case.json.len + 1));
+        try std.testing.expectEqualStrings(case.json, retained);
+    }
+}
+
+test "runtime reports arithmetic overflow as an error after loading hierarchy" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    const path = try std.fs.path.join(a, &.{ f.directory, "overflow.scene" });
+    defer a.free(path);
+    const cases = [_]struct { json: []const u8, code: []const u8 }{
+        .{ .json = "{\"entities\":[{},{\"parent_index\":0,\"components\":[{\"kind\":\"age\",\"ticks\":18446744073709551615}]}]}", .code = "AgeOverflow" },
+        .{ .json = "{\"entities\":[{},{\"parent_index\":0,\"components\":[{\"kind\":\"position\",\"x\":9223372036854775807},{\"kind\":\"velocity\",\"x\":1}]}]}", .code = "PositionOverflow" },
+    };
+    for (cases) |case| {
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = case.json });
+        var run = Run.init();
+        defer run.deinit();
+        try f.runApp(&run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "1", "--scene", path }, .{ .expected = 70 });
+        try expectTextField(try run.event("runtime.run_failed"), "code", case.code);
+        try std.testing.expectEqual(@as(usize, 0), run.countOf("runtime.run_complete"));
+    }
 }
 
 test "execution flags are explicit bounded and rejected otherwise" {
