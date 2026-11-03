@@ -10,6 +10,7 @@ pub const format = @import("format.zig");
 pub const loader = @import("loader.zig");
 pub const content_format = @import("content_format.zig");
 pub const content_loader = @import("content_loader.zig");
+pub const content_serializer = @import("content_serializer.zig");
 
 pub const Entity = entity.Entity;
 pub const EntityPool = entity.EntityPool;
@@ -28,4 +29,7 @@ test {
     _ = @import("ecs/world.zig");
     _ = @import("ecs/systems.zig");
     _ = @import("scene.zig");
+    _ = @import("content_format.zig");
+    _ = @import("content_loader.zig");
+    _ = @import("content_serializer.zig");
 }
