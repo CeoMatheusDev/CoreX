@@ -40,6 +40,7 @@ test {
     _ = @import("ecs/transform2d.zig");
     _ = @import("ecs/events.zig");
     _ = @import("ecs/eventful_world.zig");
+    _ = @import("ecs/transform3d.zig");
     _ = @import("scene.zig");
     _ = @import("content_format.zig");
     _ = @import("content_loader.zig");
