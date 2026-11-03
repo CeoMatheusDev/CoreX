@@ -1,0 +1,11 @@
+.{
+    .name = .corex_editor_core,
+    .fingerprint = 0x9a7f0bcd12a4e5f6,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .core = .{ .path = "../core" },
+        .scene = .{ .path = "../scene" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "root.zig" },
+}

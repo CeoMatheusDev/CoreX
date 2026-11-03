@@ -8,6 +8,8 @@ pub fn build(b: *std.Build) void {
     }
     const optimize = b.standardOptimizeOption(.{});
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize });
+    const core_dep = b.dependency("core", .{ .target = target, .optimize = optimize });
+    const scene_dep = b.dependency("scene", .{ .target = target, .optimize = optimize });
     const repository_root = b.option([]const u8, "repository-root", "Repository containing exemploproject (relative to editor)") orelse "..";
     const preflight_options = b.addOptions();
     preflight_options.addOption([]const u8, "repository_root", repository_root);
