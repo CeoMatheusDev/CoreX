@@ -4,7 +4,7 @@
 //! prove that the Runtime drives real entities, components and systems through
 //! the Core lifecycle. It has no assets, scripts, input, window or GPU. The
 //! checksum covers entity handles and component values in index order; when
-//! hierarchy is present it additionally covers parent links and sibling order.
+//! present it additionally covers hierarchy and authored/computed 3D state.
 const std = @import("std");
 const core = @import("corex_core");
 const scene = @import("corex_scene");
@@ -19,6 +19,9 @@ pub const Stores = struct {
     age: scene.SparseSet(Age),
     parent: scene.SparseSet(scene.hierarchy.Parent),
     children: scene.SparseSet(scene.hierarchy.Children),
+    local_transform3d: scene.SparseSet(scene.transform3d.LocalTransform3D),
+    world_transform3d: scene.SparseSet(scene.transform3d.WorldTransform3D),
+    transform_dirty: scene.SparseSet(scene.transform_dirty.TransformDirty),
 };
 
 pub const World = scene.World(Stores);
@@ -54,6 +57,30 @@ pub fn populate(scene_value: *Scene) !void {
         });
         try world.add(Age, entity, .{ .ticks = 0 });
     }
+}
+
+/// Computed and transient components are Runtime-owned, never file input.
+pub fn validateContent(file: *const scene.content_format.SceneFile) !void {
+    for (file.entities) |entity| for (entity.components) |component| {
+        if (std.mem.eql(u8, component.kind, "world_transform3d") or
+            std.mem.eql(u8, component.kind, "transform_dirty")) return error.InvalidTransformComponent;
+    };
+}
+
+/// Compute the initial world-space matrices after loading and before ticks.
+/// Runtime local matrices are immutable in this slice, so this work (including
+/// temporary storage and fallible component insertion) is setup-only.
+pub fn prepareTransforms(scene_value: *Scene) !void {
+    const world = scene_value.world();
+    if (world.componentCount(scene.transform3d.LocalTransform3D) == 0) return;
+    // Mark every live entity once. The shared dirty walker coalesces marked
+    // subtrees, detects cycles, and handles parents after children in file order.
+    var index: u32 = 0;
+    while (index < world.highWater()) : (index += 1) {
+        const entity = world.entityAt(index) orelse continue;
+        try scene.transform_dirty.tryMarkDirty(World, world, entity);
+    }
+    try scene.transform_dirty.tryPropagateDirtyWithImplicitIdentity(World, world);
 }
 
 pub fn entitiesAlive(scene_value: *const Scene) u32 {
@@ -120,7 +147,50 @@ pub fn stateChecksum(scene_value: *const Scene) u64 {
             }
         }
     }
+
+    // A separate, optional suffix preserves all existing smoke, flat and
+    // hierarchy-only checksums. Both authored and computed matrices are hashed
+    // in index order. Dirty markers are normally empty after setup, but are
+    // included if present so this helper still covers transient state.
+    if (world.componentCount(scene.transform3d.LocalTransform3D) != 0 or
+        world.componentCount(scene.transform3d.WorldTransform3D) != 0 or
+        world.componentCount(scene.transform_dirty.TransformDirty) != 0)
+    {
+        hashBytes(&hash, "corex.transform3d.v1\x00");
+        index = 0;
+        while (index < world.highWater()) : (index += 1) {
+            const entity = world.entityAt(index) orelse continue;
+            hashInt(&hash, entity.index);
+            hashInt(&hash, entity.generation);
+            if (world.getConst(scene.transform3d.LocalTransform3D, entity)) |local| {
+                hashByte(&hash, 1);
+                hashMatrix(&hash, local.matrix);
+            } else {
+                hashByte(&hash, 0);
+            }
+            if (world.getConst(scene.transform3d.WorldTransform3D, entity)) |computed| {
+                hashByte(&hash, 1);
+                hashMatrix(&hash, computed.matrix);
+            } else {
+                hashByte(&hash, 0);
+            }
+            if (world.getConst(scene.transform_dirty.TransformDirty, entity)) |dirty| {
+                hashByte(&hash, 1);
+                hashByte(&hash, if (dirty.subtree_dirty) 1 else 0);
+            } else {
+                hashByte(&hash, 0);
+            }
+        }
+    }
     return hash;
+}
+
+fn hashMatrix(hash: *u64, matrix: scene.transform3d.Mat4) void {
+    // Freeze the v1 checksum field order rather than implicitly extending it if
+    // the matrix type ever gains metadata.
+    inline for (.{ "m00", "m01", "m02", "m03", "m10", "m11", "m12", "m13", "m20", "m21", "m22", "m23" }) |name| {
+        hashInt(hash, @field(matrix, name));
+    }
 }
 
 fn moveSystem(world: *World, _: ?*anyopaque, _: core.subsystem.Step) anyerror!void {
@@ -190,6 +260,7 @@ test "loaded hierarchy preserves links and sibling order without tick allocation
     try testing.expectEqualSlices(scene.Entity, &.{ second, first }, children);
 
     counter.resetCounters();
+    try prepareTransforms(&app);
     for (0..100) |index| try app.update(.{ .index = index, .dt_ns = 1 });
     try testing.expectEqual(@as(i64, 101), world.getConst(Position, first).?.x);
     try testing.expectEqual(@as(u64, 102), world.getConst(Age, grandchild).?.ticks);
@@ -272,4 +343,52 @@ test "hierarchy file ordinals remap to reused generational handles" {
     try testing.expect(original != stateChecksum(&app));
     children[0].generation +%= 1;
     try testing.expectEqual(original, stateChecksum(&app));
+}
+
+test "3D scene computes parent-first through identity gaps without tick allocations" {
+    var counter = scene.testing_allocator.CountingAllocator{ .backing = testing.allocator };
+    const allocator = counter.allocator();
+    var file = try scene.content_format.parse(allocator,
+        \\{"entities":[{"parent_index":1,"components":[{"kind":"local_transform3d","m03":131072}]},{"parent_index":3},{"components":[{"kind":"position","x":4}]},{"components":[{"kind":"local_transform3d","m00":0,"m01":-65536,"m10":65536,"m11":0,"m03":65536}]}]}
+    );
+    defer scene.content_format.deinit(allocator, &file);
+    var app = try init(allocator);
+    defer app.deinit();
+    defer scene.hierarchy.clear(World, allocator, app.world());
+    try installSystems(&app);
+    try app.start();
+    defer app.stop();
+    try validateContent(&file);
+    try scene.content_loader.load(Stores, app.world(), &file);
+    try prepareTransforms(&app);
+    const world = app.world();
+    const leaf = world.entityAt(0).?;
+    const middle = world.entityAt(1).?;
+    const unrelated = world.entityAt(2).?;
+    const root = world.entityAt(3).?;
+    try testing.expectEqual(@as(usize, 0), world.componentCount(scene.transform_dirty.TransformDirty));
+    try testing.expect(!world.has(scene.transform3d.WorldTransform3D, unrelated));
+    try testing.expectEqualDeep(world.getConst(scene.transform3d.WorldTransform3D, root).?.matrix, world.getConst(scene.transform3d.WorldTransform3D, middle).?.matrix);
+    const leaf_world = world.getConst(scene.transform3d.WorldTransform3D, leaf).?.matrix;
+    try testing.expectEqual(@as(i32, 65536), leaf_world.m03);
+    try testing.expectEqual(@as(i32, 131072), leaf_world.m13);
+
+    counter.resetCounters();
+    const initial = stateChecksum(&app);
+    for (0..100) |index| try app.update(.{ .index = index, .dt_ns = 1 });
+    try testing.expectEqual(initial, stateChecksum(&app));
+    try testing.expectEqual(@as(usize, 0), counter.allocations);
+
+    const local = world.get(scene.transform3d.LocalTransform3D, leaf).?;
+    local.matrix.m03 += 1;
+    try testing.expect(initial != stateChecksum(&app));
+    local.matrix.m03 -= 1;
+    const computed = world.get(scene.transform3d.WorldTransform3D, leaf).?;
+    computed.matrix.m03 += 1;
+    try testing.expect(initial != stateChecksum(&app));
+    computed.matrix.m03 -= 1;
+    try scene.transform_dirty.tryMarkDirty(World, world, leaf);
+    try testing.expect(initial != stateChecksum(&app));
+    _ = try world.remove(scene.transform_dirty.TransformDirty, leaf);
+    try testing.expectEqual(initial, stateChecksum(&app));
 }

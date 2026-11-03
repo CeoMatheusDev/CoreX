@@ -215,8 +215,10 @@ fn freeValue(allocator: std.mem.Allocator, value: Value) void {
     }
 }
 
-/// Fields supported by both the content loader and serializer. Pointer-bearing
-/// values other than borrowed UTF-8 text and nested structs are not supported.
+/// Generic scalar component support shared by loader and serializer. A
+/// type-specific codec may additionally support a particular nested type;
+/// arbitrary nested structs and pointer-bearing values other than borrowed
+/// UTF-8 text remain unsupported.
 pub fn supportsComponent(comptime T: type) bool {
     const info = @typeInfo(T);
     if (info != .@"struct") return false;

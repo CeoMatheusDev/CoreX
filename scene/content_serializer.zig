@@ -9,6 +9,8 @@ const std = @import("std");
 const world_mod = @import("ecs/world.zig");
 const format = @import("content_format.zig");
 const hierarchy = @import("ecs/hierarchy.zig");
+const transform3d = @import("ecs/transform3d.zig");
+const transform_dirty = @import("ecs/transform_dirty.zig");
 
 pub const SerializeError = error{
     OutOfMemory,
@@ -23,6 +25,17 @@ pub const SerializeError = error{
 /// are file positions, not generational entity handles. Invalid or inconsistent
 /// hierarchy state is rejected rather than silently producing a broken file.
 pub fn serialize(comptime StoresT: type, allocator: std.mem.Allocator, world: *const world_mod.World(StoresT), system_capacity: u32) ![]u8 {
+    return serializeImpl(StoresT, allocator, world, system_capacity, false);
+}
+
+/// Serialize authored state while omitting computed WorldTransform3D and
+/// transient TransformDirty components. The consumer must recompute these;
+/// every other unsupported component still fails rather than being discarded.
+pub fn serializeAuthored(comptime StoresT: type, allocator: std.mem.Allocator, world: *const world_mod.World(StoresT), system_capacity: u32) ![]u8 {
+    return serializeImpl(StoresT, allocator, world, system_capacity, true);
+}
+
+fn serializeImpl(comptime StoresT: type, allocator: std.mem.Allocator, world: *const world_mod.World(StoresT), system_capacity: u32, comptime authored: bool) ![]u8 {
     if (world.entityCapacity() == 0 or world.entityCapacity() > format.max_entities) return error.InvalidSceneData;
     const links = try collectParents(StoresT, allocator, world);
     defer if (links) |refs| {
@@ -32,7 +45,7 @@ pub fn serialize(comptime StoresT: type, allocator: std.mem.Allocator, world: *c
 
     var aw: std.Io.Writer.Allocating = .init(allocator);
     defer aw.deinit();
-    writeWorld(StoresT, &aw.writer, world, system_capacity, links) catch |err| switch (err) {
+    writeWorld(StoresT, &aw.writer, world, system_capacity, links, authored) catch |err| switch (err) {
         // Allocating.Writer's only write failure is an allocation failure.
         error.WriteFailed => return error.OutOfMemory,
         else => return err,
@@ -106,7 +119,7 @@ fn collectParents(comptime StoresT: type, allocator: std.mem.Allocator, world: *
     }
 }
 
-fn writeWorld(comptime StoresT: type, w: *std.Io.Writer, world: *const world_mod.World(StoresT), system_capacity: u32, links: ?HierarchyRefs) SerializeError!void {
+fn writeWorld(comptime StoresT: type, w: *std.Io.Writer, world: *const world_mod.World(StoresT), system_capacity: u32, links: ?HierarchyRefs, comptime authored: bool) SerializeError!void {
     try w.writeAll("{\"entity_capacity\": ");
     try w.print("{d}", .{world.entityCapacity()});
     try w.print(", \"system_capacity\": {d}, \"entities\": [", .{system_capacity});
@@ -125,21 +138,23 @@ fn writeWorld(comptime StoresT: type, w: *std.Io.Writer, world: *const world_mod
             }
         }
         try w.writeAll("\"components\": [");
-        try writeComponents(StoresT, w, world, entity);
+        try writeComponents(StoresT, w, world, entity, authored);
         try w.writeAll("]}");
         file_index += 1;
     }
     try w.writeAll("]}");
 }
 
-fn writeComponents(comptime StoresT: type, w: *std.Io.Writer, world: *const world_mod.World(StoresT), entity: anytype) !void {
+fn writeComponents(comptime StoresT: type, w: *std.Io.Writer, world: *const world_mod.World(StoresT), entity: anytype, comptime authored: bool) !void {
     const stores_info = @typeInfo(StoresT).@"struct";
     var first = true;
     inline for (stores_info.field_names, stores_info.field_types) |store_name, FieldType| {
         const Component = FieldType.Component;
-        if (comptime Component != hierarchy.Parent and Component != hierarchy.Children) {
+        if (comptime Component != hierarchy.Parent and Component != hierarchy.Children and
+            (!authored or (Component != transform3d.WorldTransform3D and Component != transform_dirty.TransformDirty)))
+        {
             if (world.getConst(Component, entity)) |value| {
-                if (comptime !format.supportsComponent(Component)) {
+                if (comptime Component != transform3d.LocalTransform3D and !format.supportsComponent(Component)) {
                     return error.UnsupportedComponentType;
                 } else {
                     if (!first) try w.writeAll(", ");
@@ -147,18 +162,26 @@ fn writeComponents(comptime StoresT: type, w: *std.Io.Writer, world: *const worl
                     try w.writeAll("{\"kind\": ");
                     if (!std.unicode.utf8ValidateSlice(store_name)) return error.InvalidUtf8;
                     try std.json.Stringify.value(@as([]const u8, store_name), .{}, w);
-                    const comp_info = @typeInfo(Component).@"struct";
-                    inline for (comp_info.field_names, comp_info.field_types) |fname, Field| {
-                        try w.writeAll(", ");
-                        if (!std.unicode.utf8ValidateSlice(fname)) return error.InvalidUtf8;
-                        try std.json.Stringify.value(@as([]const u8, fname), .{}, w);
-                        try w.writeAll(": ");
-                        try writeValue(w, Field, @field(value, fname));
+                    if (comptime Component == transform3d.LocalTransform3D) {
+                        try writeFields(w, &value.matrix);
+                    } else {
+                        try writeFields(w, value);
                     }
                     try w.writeAll("}");
                 }
             }
         }
+    }
+}
+
+fn writeFields(w: *std.Io.Writer, value: anytype) !void {
+    const info = @typeInfo(@TypeOf(value.*)).@"struct";
+    inline for (info.field_names, info.field_types) |fname, Field| {
+        try w.writeAll(", ");
+        if (!std.unicode.utf8ValidateSlice(fname)) return error.InvalidUtf8;
+        try std.json.Stringify.value(@as([]const u8, fname), .{}, w);
+        try w.writeAll(": ");
+        try writeValue(w, Field, @field(value, fname));
     }
 }
 
@@ -497,4 +520,113 @@ test "partial hierarchy stores never silently serialize links" {
     defer testing.allocator.free(list);
     try children.add(hierarchy.Children, only, .{ .entities = list });
     try testing.expectError(error.HierarchyUnsupported, serialize(ChildrenOnly, testing.allocator, &children, 0));
+}
+
+const TransformCodecStores = struct {
+    parent: sparse_set.SparseSet(hierarchy.Parent),
+    children: sparse_set.SparseSet(hierarchy.Children),
+    local_transform3d: sparse_set.SparseSet(transform3d.LocalTransform3D),
+    world_transform3d: sparse_set.SparseSet(transform3d.WorldTransform3D),
+    dirty: sparse_set.SparseSet(transform_dirty.TransformDirty),
+};
+const TransformCodecWorld = world_mod.World(TransformCodecStores);
+
+test "3D authored serialization round-trips matrices and excludes computed state" {
+    var world = try TransformCodecWorld.init(testing.allocator, 8);
+    defer world.deinit();
+    defer hierarchy.clear(TransformCodecWorld, testing.allocator, &world);
+    const leaf = try world.create();
+    const middle = try world.create();
+    const root = try world.create();
+    const sibling = try world.create();
+    try world.add(transform3d.LocalTransform3D, root, .{ .matrix = .{ .m03 = 65536, .m11 = -65536, .m23 = std.math.minInt(i32) } });
+    try world.add(transform3d.LocalTransform3D, leaf, .{ .matrix = .translation(131072, 0, 0) });
+    try hierarchy.setParent(TransformCodecWorld, testing.allocator, &world, root, sibling);
+    try hierarchy.setParent(TransformCodecWorld, testing.allocator, &world, root, middle);
+    try hierarchy.setParent(TransformCodecWorld, testing.allocator, &world, middle, leaf);
+    // Ordinary serialization supports authored locals when no computed state is
+    // present; its previous rejection of nested derived components remains.
+    const local_json = try serialize(TransformCodecStores, testing.allocator, &world, 4);
+    defer testing.allocator.free(local_json);
+    try transform_dirty.tryMarkDirty(TransformCodecWorld, &world, root);
+    try transform_dirty.tryPropagateDirtyWithImplicitIdentity(TransformCodecWorld, &world);
+    try transform_dirty.tryMarkDirty(TransformCodecWorld, &world, leaf);
+    try testing.expectError(error.UnsupportedComponentType, serialize(TransformCodecStores, testing.allocator, &world, 4));
+
+    const json = try serializeAuthored(TransformCodecStores, testing.allocator, &world, 4);
+    defer testing.allocator.free(json);
+    try testing.expectEqualStrings(local_json, json);
+    try testing.expect(std.mem.indexOf(u8, json, "world_transform3d") == null);
+    try testing.expect(std.mem.indexOf(u8, json, "dirty") == null);
+    var file = try format.parse(testing.allocator, json);
+    defer format.deinit(testing.allocator, &file);
+    var loaded = try TransformCodecWorld.init(testing.allocator, 8);
+    defer loaded.deinit();
+    defer hierarchy.clear(TransformCodecWorld, testing.allocator, &loaded);
+    try @import("content_loader.zig").load(TransformCodecStores, &loaded, &file);
+    const loaded_leaf = loaded.entityAt(0).?;
+    const loaded_middle = loaded.entityAt(1).?;
+    const loaded_root = loaded.entityAt(2).?;
+    const loaded_sibling = loaded.entityAt(3).?;
+    try testing.expectEqualSlices(@import("ecs/entity.zig").Entity, &.{ loaded_sibling, loaded_middle }, hierarchy.getChildren(TransformCodecWorld, &loaded, loaded_root));
+    try testing.expectEqual(loaded_middle, hierarchy.getParent(TransformCodecWorld, &loaded, loaded_leaf).?);
+    try testing.expectEqualDeep(world.getConst(transform3d.LocalTransform3D, root).?.matrix, loaded.getConst(transform3d.LocalTransform3D, loaded_root).?.matrix);
+    try testing.expectEqualDeep(world.getConst(transform3d.LocalTransform3D, leaf).?.matrix, loaded.getConst(transform3d.LocalTransform3D, loaded_leaf).?.matrix);
+    try testing.expectEqual(@as(usize, 0), loaded.componentCount(transform3d.WorldTransform3D));
+    try testing.expectEqual(@as(usize, 0), loaded.componentCount(transform_dirty.TransformDirty));
+    try transform_dirty.tryMarkDirty(TransformCodecWorld, &loaded, loaded_root);
+    try transform_dirty.tryPropagateDirtyWithImplicitIdentity(TransformCodecWorld, &loaded);
+    try testing.expectEqualDeep(world.getConst(transform3d.WorldTransform3D, leaf).?.matrix, loaded.getConst(transform3d.WorldTransform3D, loaded_leaf).?.matrix);
+}
+
+test "3D authored serialization frees all resources on allocation failure" {
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator) !void {
+            var world = try TransformCodecWorld.init(allocator, 4);
+            defer world.deinit();
+            defer hierarchy.clear(TransformCodecWorld, allocator, &world);
+            const root = try world.create();
+            const child = try world.create();
+            try world.add(transform3d.LocalTransform3D, root, .{ .matrix = .translation(12, 0, 0) });
+            try world.add(transform3d.LocalTransform3D, child, .{ .matrix = .translation(-2, 0, 0) });
+            try hierarchy.setParent(TransformCodecWorld, allocator, &world, root, child);
+            try transform_dirty.tryMarkDirty(TransformCodecWorld, &world, root);
+            try transform_dirty.tryPropagateDirtyWithImplicitIdentity(TransformCodecWorld, &world);
+            const json = try serializeAuthored(TransformCodecStores, allocator, &world, 4);
+            defer allocator.free(json);
+            var file = try format.parse(allocator, json);
+            defer format.deinit(allocator, &file);
+            try testing.expectEqual(@as(usize, 2), file.entities.len);
+        }
+    }.probe, .{});
+}
+
+test "authored filtering is explicit and legacy scalar dirty serialization is unchanged" {
+    const DirtyStores = struct { dirty: sparse_set.SparseSet(transform_dirty.TransformDirty) };
+    const DirtyWorld = world_mod.World(DirtyStores);
+    var source = try DirtyWorld.init(testing.allocator, 4);
+    defer source.deinit();
+    const entity = try source.create();
+    try source.add(transform_dirty.TransformDirty, entity, .{ .subtree_dirty = true });
+    const legacy = try serialize(DirtyStores, testing.allocator, &source, 1);
+    defer testing.allocator.free(legacy);
+    var file = try format.parse(testing.allocator, legacy);
+    defer format.deinit(testing.allocator, &file);
+    var loaded = try DirtyWorld.init(testing.allocator, 4);
+    defer loaded.deinit();
+    try @import("content_loader.zig").load(DirtyStores, &loaded, &file);
+    try testing.expect(loaded.getConst(transform_dirty.TransformDirty, loaded.entityAt(0).?).?.subtree_dirty);
+
+    const authored = try serializeAuthored(DirtyStores, testing.allocator, &source, 1);
+    defer testing.allocator.free(authored);
+    try testing.expect(std.mem.indexOf(u8, authored, "dirty") == null);
+
+    const Nested = struct { vector: struct { x: i32 } };
+    const NestedStores = struct { nested: sparse_set.SparseSet(Nested) };
+    const NestedWorld = world_mod.World(NestedStores);
+    var nested = try NestedWorld.init(testing.allocator, 4);
+    defer nested.deinit();
+    const other = try nested.create();
+    try nested.add(Nested, other, .{ .vector = .{ .x = 1 } });
+    try testing.expectError(error.UnsupportedComponentType, serializeAuthored(NestedStores, testing.allocator, &nested, 1));
 }
