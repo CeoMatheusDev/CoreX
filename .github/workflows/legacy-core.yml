@@ -2,9 +2,9 @@ name: Legacy core smoke tests
 
 on:
   push:
-    paths: ['src/**', 'tests/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'versioning/**', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
+    paths: ['src/**', 'tests/**', 'core/**', 'scene/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'versioning/**', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
   pull_request:
-    paths: ['src/**', 'tests/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'versioning/**', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
+    paths: ['src/**', 'tests/**', 'core/**', 'scene/**', 'shared/**', 'editor/**', 'runtime/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'tools/zig/**', 'tools/install_zig.sh', 'tools/test_install_zig.sh', 'tools/prepare_legacy_deps.sh', 'tools/test_prepare_legacy_deps.sh', 'build.zig', 'build.zig.zon', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'versioning/**', 'tools/prepare_legacy_deps.py', 'tools/test_prepare_legacy_deps.py', 'tools/zig-requirements.txt', '.github/workflows/legacy-core.yml']
   workflow_dispatch:
 
 permissions:

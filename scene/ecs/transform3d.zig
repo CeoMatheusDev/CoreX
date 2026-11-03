@@ -12,6 +12,7 @@ const std = @import("std");
 const entity_mod = @import("entity.zig");
 const Entity = entity_mod.Entity;
 const hierarchy = @import("hierarchy.zig");
+const fixed = @import("fixed.zig");
 
 pub const fixed_one: i32 = 65536;
 
@@ -67,37 +68,30 @@ pub const Mat4 = struct {
     /// Compose: self * other.
     pub fn mul(self: Mat4, o: Mat4) Mat4 {
         return .{
-            .m00 = mulF(self.m00, o.m00) + mulF(self.m01, o.m10) + mulF(self.m02, o.m20),
-            .m01 = mulF(self.m00, o.m01) + mulF(self.m01, o.m11) + mulF(self.m02, o.m21),
-            .m02 = mulF(self.m00, o.m02) + mulF(self.m01, o.m12) + mulF(self.m02, o.m22),
-            .m03 = mulF(self.m00, o.m03) + mulF(self.m01, o.m13) + mulF(self.m02, o.m23) + self.m03,
-            .m10 = mulF(self.m10, o.m00) + mulF(self.m11, o.m10) + mulF(self.m12, o.m20),
-            .m11 = mulF(self.m10, o.m01) + mulF(self.m11, o.m11) + mulF(self.m12, o.m21),
-            .m12 = mulF(self.m10, o.m02) + mulF(self.m11, o.m12) + mulF(self.m12, o.m22),
-            .m13 = mulF(self.m10, o.m03) + mulF(self.m11, o.m13) + mulF(self.m12, o.m23) + self.m13,
-            .m20 = mulF(self.m20, o.m00) + mulF(self.m21, o.m10) + mulF(self.m22, o.m20),
-            .m21 = mulF(self.m20, o.m01) + mulF(self.m21, o.m11) + mulF(self.m22, o.m21),
-            .m22 = mulF(self.m20, o.m02) + mulF(self.m21, o.m12) + mulF(self.m22, o.m22),
-            .m23 = mulF(self.m20, o.m03) + mulF(self.m21, o.m13) + mulF(self.m22, o.m23) + self.m23,
+            .m00 = fixed.mulQ16(self.m00, o.m00) + fixed.mulQ16(self.m01, o.m10) + fixed.mulQ16(self.m02, o.m20),
+            .m01 = fixed.mulQ16(self.m00, o.m01) + fixed.mulQ16(self.m01, o.m11) + fixed.mulQ16(self.m02, o.m21),
+            .m02 = fixed.mulQ16(self.m00, o.m02) + fixed.mulQ16(self.m01, o.m12) + fixed.mulQ16(self.m02, o.m22),
+            .m03 = fixed.mulQ16(self.m00, o.m03) + fixed.mulQ16(self.m01, o.m13) + fixed.mulQ16(self.m02, o.m23) + self.m03,
+            .m10 = fixed.mulQ16(self.m10, o.m00) + fixed.mulQ16(self.m11, o.m10) + fixed.mulQ16(self.m12, o.m20),
+            .m11 = fixed.mulQ16(self.m10, o.m01) + fixed.mulQ16(self.m11, o.m11) + fixed.mulQ16(self.m12, o.m21),
+            .m12 = fixed.mulQ16(self.m10, o.m02) + fixed.mulQ16(self.m11, o.m12) + fixed.mulQ16(self.m12, o.m22),
+            .m13 = fixed.mulQ16(self.m10, o.m03) + fixed.mulQ16(self.m11, o.m13) + fixed.mulQ16(self.m12, o.m23) + self.m13,
+            .m20 = fixed.mulQ16(self.m20, o.m00) + fixed.mulQ16(self.m21, o.m10) + fixed.mulQ16(self.m22, o.m20),
+            .m21 = fixed.mulQ16(self.m20, o.m01) + fixed.mulQ16(self.m21, o.m11) + fixed.mulQ16(self.m22, o.m21),
+            .m22 = fixed.mulQ16(self.m20, o.m02) + fixed.mulQ16(self.m21, o.m12) + fixed.mulQ16(self.m22, o.m22),
+            .m23 = fixed.mulQ16(self.m20, o.m03) + fixed.mulQ16(self.m21, o.m13) + fixed.mulQ16(self.m22, o.m23) + self.m23,
         };
     }
 
     /// Transform a 3D point. Returns (x, y, z) in Q16.16.
     pub fn applyPoint(self: Mat4, x: i32, y: i32, z: i32) struct { x: i32, y: i32, z: i32 } {
         return .{
-            .x = mulF(self.m00, x) + mulF(self.m01, y) + mulF(self.m02, z) + self.m03,
-            .y = mulF(self.m10, x) + mulF(self.m11, y) + mulF(self.m12, z) + self.m13,
-            .z = mulF(self.m20, x) + mulF(self.m21, y) + mulF(self.m22, z) + self.m23,
+            .x = fixed.mulQ16(self.m00, x) + fixed.mulQ16(self.m01, y) + fixed.mulQ16(self.m02, z) + self.m03,
+            .y = fixed.mulQ16(self.m10, x) + fixed.mulQ16(self.m11, y) + fixed.mulQ16(self.m12, z) + self.m13,
+            .z = fixed.mulQ16(self.m20, x) + fixed.mulQ16(self.m21, y) + fixed.mulQ16(self.m22, z) + self.m23,
         };
     }
 };
-
-fn mulF(a: i32, b: i32) i32 {
-    const wide: i64 = @as(i64, a) * @as(i64, b);
-    const half: i64 = 32768;
-    const rounded = if (wide >= 0) wide + half else wide - half;
-    return @intCast(rounded >> 16);
-}
 
 fn normAngle(angle_deg: i32) usize {
     const three_sixty: i32 = 360;
@@ -184,6 +178,7 @@ const TestWorld = world_mod.World(T3DStores);
 test "identity 3D transform" {
     var world = try TestWorld.init(testing.allocator, 4);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
     const e = try world.create();
     try world.add(LocalTransform3D, e, .{ .matrix = .identity() });
     propagateTransforms3D(TestWorld, &world);
@@ -195,6 +190,7 @@ test "identity 3D transform" {
 test "3D translation composes through hierarchy" {
     var world = try TestWorld.init(testing.allocator, 8);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
     const p = try world.create();
     try world.add(LocalTransform3D, p, .{ .matrix = .translation(10, 20, 30) });
     const c = try world.create();
@@ -229,4 +225,10 @@ test "scale 3D" {
     try testing.expectEqual(@as(i32, 20), p.x);
     try testing.expectEqual(@as(i32, 30), p.y);
     try testing.expectEqual(@as(i32, 10), p.z);
+}
+
+test "3D identity composition preserves negative values exactly" {
+    const transform = Mat4{ .m00 = -65536, .m01 = -1234, .m03 = -5, .m13 = -17, .m23 = -3 };
+    try testing.expectEqualDeep(transform, Mat4.identity().mul(transform));
+    try testing.expectEqual(@as(i32, -5), Mat4.identity().applyPoint(-5, 0, 0).x);
 }

@@ -33,7 +33,8 @@ Sem `zig` no PATH, no Linux é possível instalar a distribuição fixada sem Py
 | `--project <arquivo>` | sim | sim | obrigatório exceto em `--help`/`--version`, a menos que o Editor receba `.proj` posicional; caminho relativo ao CWD ou absoluto, UTF-8, até 4096 bytes |
 | `<arquivo.proj>` | sim | não | alternativa posicional para abertura pelo SO; extensão sem distinção de maiúsculas/minúsculas |
 | `--headless` | sim | sim | declara intenção de não usar janela/GPU; sozinho não executa nada |
-| `--frames <1..1000000>` | não | sim | execução headless determinística com cena de fumaça embutida; exige `--headless` e é incompatível com `--validate-only`/`--check-runtime` |
+| `--frames <1..1000000>` | não | sim | execução headless determinística; exige `--headless` e é incompatível com `--validate-only`/`--check-runtime` |
+| `--scene <arquivo>` | não | sim | conteúdo JSON plano opcional (até 4 MiB), exige `--headless --frames`; relativo ao CWD ou absoluto |
 | `--validate-only` | sim | sim | valida somente documento/presets/distribuição; autoriza retorno zero nesse escopo |
 | `--check-runtime <executável-absoluto>` | sim | não | exige `--validate-only`; lança filho em validação, não Play |
 | `--help` | sim | sim | deve ser o único argumento; responde com um registro JSON lines e exit 0 |
@@ -63,7 +64,7 @@ Execução headless explícita (Runtime apenas):
 runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --frames 120
 ```
 
-`--frames` aceita de 1 a 1 000 000 frames decimais. `0`, valor acima do limite, valor não decimal, repetição, ausência de valor, uso sem `--headless`, uso com `--validate-only`/`--check-runtime` e uso no Editor são erros de CLI (exit 2), nunca um padrão implícito. O modo usa relógio **virtual** de 16 666 667 ns por frame a 60 Hz, orçamento de 8 passos por frame, não lê tempo de parede, não cria janela/GPU, não carrega cena/assets/scripts, não apresenta frame e não aceita entrada real. Ele executa uma **cena de fumaça embutida** (8 entidades com `Position`/`Velocity`/`Age` e dois systems) para provar estado real e determinismo; ver [ADR-006](ADR-006-core-library-and-headless-execution.md), [ADR-008](ADR-008-scene-lifecycle-and-runtime-integration.md) e o [README do Runtime](../runtime/README.md).
+`--frames` aceita de 1 a 1 000 000 frames decimais. `0`, valor acima do limite, valor não decimal, repetição, ausência de valor, uso sem `--headless`, uso com `--validate-only`/`--check-runtime` e uso no Editor são erros de CLI (exit 2), nunca um padrão implícito. O modo usa relógio **virtual** de 16 666 667 ns por frame a 60 Hz, orçamento de 8 passos por frame, não lê tempo de parede, não cria janela/GPU, não carrega assets/scripts, não apresenta frame e não aceita entrada real. Por padrão executa uma **cena de fumaça embutida** (8 entidades com `Position`/`Velocity`/`Age` e dois systems); `--scene` seleciona um descritor JSON plano com esses componentes. A hierarquia do pacote Scene ainda não está integrada ao Runtime; ver [ADR-006](ADR-006-core-library-and-headless-execution.md), [ADR-008](ADR-008-scene-lifecycle-and-runtime-integration.md) e o [README do Runtime](../runtime/README.md).
 
 ## Códigos de saída
 
@@ -94,7 +95,7 @@ Eventos principais:
 - `editor.validation_complete` / `runtime.validation_complete`: escopo `document_and_presets`, fingerprint e flags explícitas de serviços ainda não carregados.
 - `runtime.check_starting` / `runtime.output` / `runtime.output_invalid` / `runtime.check_complete` / `runtime.check_failed`: supervisão pelo Editor. Os registros do filho ficam aninhados em `fields.record`, preservando origem/sessão/seq originais.
 - `application.core_unavailable`: execução real solicitada sem executor ligado na aplicação (por exemplo, sem `--frames`, ou no Editor).
-- `runtime.run_starting` / `runtime.run_complete`: laço headless determinístico; carregam contagens (`frames`, `steps`, `ticks`, `input_ticks`, `phase_remainder`), o estado final (`entities_alive`, `state_checksum`) e a cena declarada (`scene="smoke"`). Sempre carregam `gpu_created=false`, `window_created=false`, `presented_frames=0`, `play_started=false`. `runtime.run_failed` acompanha erro do executor. `state_checksum` é FNV-1a 64 sobre handles e valores de componentes em ordem de índice; não é hash de assets nem prova de gameplay.
+- `runtime.run_starting` / `runtime.run_complete`: laço headless determinístico; carregam contagens (`frames`, `steps`, `ticks`, `input_ticks`, `phase_remainder`), o estado final (`entities_alive`, `state_checksum`) e a cena declarada (`scene="smoke"` ou `scene="content"`). Sempre carregam `gpu_created=false`, `window_created=false`, `presented_frames=0`, `play_started=false`. `runtime.run_failed` acompanha erro do executor. `state_checksum` é FNV-1a 64 sobre handles e valores de componentes em ordem de índice; não é hash de assets nem prova de gameplay.
 
 O fingerprint v4 inclui separadamente o perfil `desktop-3d-canvas-v1` e, quando presente em V3, o Renderer Profile solicitado, além do modelo normalizado completo do `.proj`, parâmetros gráficos resolvidos e manifesto validado/empacotado. Não inclui relógio, PID, sessão ou CWD. Não é assinatura/autenticação, hash de assets ou comprovação de determinismo da simulação/execução gráfica. Um `.proj` equivalente em defaults opcionais produz a mesma identidade; um projeto com configuração, Renderer Profile ou seed diferente não deve confirmá-la.
 

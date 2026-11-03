@@ -282,7 +282,12 @@ test "loadWorld accepts a valid descriptor format" {
 test "saveDescriptor allocates and returns bytes" {
     var counter = CountingAllocator{ .backing = testing.allocator };
     var scene = try TestScene.init(counter.allocator(), .{ .entity_capacity = 2, .system_capacity = 3 });
+    defer scene.deinit();
     counter.resetCounters();
     const json = try scene.saveDescriptor(counter.allocator());
-    try testing.expectEqual(std.mem.eql(u8, json, "[\"entity_capacity\":\n{}\",\"system_capacity\":{}]"), false);
+    defer counter.allocator().free(json);
+    var parsed = try @import("content_format.zig").parse(testing.allocator, json);
+    defer @import("content_format.zig").deinit(testing.allocator, &parsed);
+    try testing.expectEqual(@as(u32, 2), parsed.entity_capacity);
+    try testing.expectEqual(@as(u32, 3), parsed.system_capacity);
 }

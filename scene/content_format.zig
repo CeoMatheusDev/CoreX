@@ -17,6 +17,12 @@ pub const SceneFile = struct {
 
 pub const EntityData = struct {
     name: ?[]const u8 = null,
+    /// Parent position in `SceneFile.entities` (not a World's slot index).
+    /// Null means root. Forward references are allowed.
+    parent_index: ?u32 = null,
+    /// Optional position within the parent's child list. If supplied for one
+    /// sibling, it must be supplied for all siblings of that parent.
+    sibling_index: ?u32 = null,
     components: []ComponentData,
 };
 
@@ -49,7 +55,10 @@ pub const ParseError = error{
 /// Strict JSON parser for the content-scene format. All strings are duped
 /// into caller-owned memory; the caller must call `deinit` exactly once.
 pub fn parse(allocator: std.mem.Allocator, bytes: []const u8) ParseError!SceneFile {
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, bytes, .{ .allocate = .alloc_always }) catch return error.ParseError;
+    var parsed = std.json.parseFromSlice(std.json.Value, allocator, bytes, .{ .allocate = .alloc_always }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.ParseError,
+    };
     defer parsed.deinit();
 
     const root = parsed.value;
@@ -96,7 +105,10 @@ fn parseEntity(allocator: std.mem.Allocator, value: std.json.Value) ParseError!E
     var entity: EntityData = .{ .components = &.{} };
     errdefer freeEntity(allocator, &entity);
     var components: std.ArrayList(ComponentData) = .empty;
-    errdefer components.deinit(allocator);
+    errdefer {
+        for (components.items) |*component| freeComponent(allocator, component);
+        components.deinit(allocator);
+    }
 
     var iter = value.object.iterator();
     while (iter.next()) |entry| {
@@ -105,10 +117,16 @@ fn parseEntity(allocator: std.mem.Allocator, value: std.json.Value) ParseError!E
         if (std.mem.eql(u8, key, "name")) {
             if (val != .string) return error.InvalidSceneData;
             entity.name = try allocator.dupe(u8, val.string);
+        } else if (std.mem.eql(u8, key, "parent_index")) {
+            entity.parent_index = if (val == .null) null else try parseU32(val);
+        } else if (std.mem.eql(u8, key, "sibling_index")) {
+            entity.sibling_index = if (val == .null) null else try parseU32(val);
         } else if (std.mem.eql(u8, key, "components")) {
             if (val != .array) return error.InvalidSceneData;
             for (val.array.items) |comp| {
-                try components.append(allocator, try parseComponent(allocator, comp));
+                var parsed_component = try parseComponent(allocator, comp);
+                errdefer freeComponent(allocator, &parsed_component);
+                try components.append(allocator, parsed_component);
             }
         } else {
             return error.UnknownField;
@@ -123,7 +141,10 @@ fn parseComponent(allocator: std.mem.Allocator, value: std.json.Value) ParseErro
     var comp: ComponentData = .{ .kind = "", .fields = &.{} };
     errdefer freeComponent(allocator, &comp);
     var fields: std.ArrayList(FieldData) = .empty;
-    errdefer fields.deinit(allocator);
+    errdefer {
+        for (fields.items) |*field| freeField(allocator, field);
+        fields.deinit(allocator);
+    }
 
     var iter = value.object.iterator();
     while (iter.next()) |entry| {
@@ -133,10 +154,11 @@ fn parseComponent(allocator: std.mem.Allocator, value: std.json.Value) ParseErro
             if (val != .string) return error.InvalidSceneData;
             comp.kind = try allocator.dupe(u8, val.string);
         } else {
-            try fields.append(allocator, .{
-                .name = try allocator.dupe(u8, key),
-                .value = try parseValue(allocator, val),
-            });
+            const name = try allocator.dupe(u8, key);
+            errdefer allocator.free(name);
+            const field_value = try parseValue(allocator, val);
+            errdefer freeValue(allocator, field_value);
+            try fields.append(allocator, .{ .name = name, .value = field_value });
         }
     }
     comp.fields = try fields.toOwnedSlice(allocator);
@@ -149,8 +171,8 @@ fn parseValue(allocator: std.mem.Allocator, value: std.json.Value) ParseError!Va
         .float => error.InvalidSceneData, // floats not allowed in scene format
         .string => |s| .{ .text = try allocator.dupe(u8, s) },
         .bool => |b| .{ .boolean = b },
-        .null => error.InvalidSceneData,
-        .array, .object, .number_string => error.InvalidSceneData,
+        .number_string => |s| .{ .unsigned = std.fmt.parseInt(u64, s, 10) catch return error.InvalidSceneData },
+        .null, .array, .object => error.InvalidSceneData,
     };
 }
 
@@ -183,10 +205,29 @@ fn freeComponent(allocator: std.mem.Allocator, c: *ComponentData) void {
 
 fn freeField(allocator: std.mem.Allocator, f: *FieldData) void {
     allocator.free(f.name);
-    switch (f.value) {
+    freeValue(allocator, f.value);
+}
+
+fn freeValue(allocator: std.mem.Allocator, value: Value) void {
+    switch (value) {
         .text => |t| allocator.free(t),
         else => {},
     }
+}
+
+/// Fields supported by both the content loader and serializer. Pointer-bearing
+/// values other than borrowed UTF-8 text and nested structs are not supported.
+pub fn supportsComponent(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info != .@"struct") return false;
+    inline for (info.@"struct".field_types) |Field| {
+        if (Field == bool or Field == []const u8) continue;
+        switch (@typeInfo(Field)) {
+            .int => |integer| if (integer.bits > 64) return false,
+            else => return false,
+        }
+    }
+    return true;
 }
 
 const testing = std.testing;
@@ -228,4 +269,33 @@ test "rejects zero entity capacity" {
 test "rejects float values" {
     const json = "{\"entities\": [{\"components\": [{\"kind\": \"X\", \"v\": 1.5}]}]}";
     try testing.expectError(error.InvalidSceneData, parse(testing.allocator, json));
+}
+
+test "parent indices are optional file positions and the parser stays strict" {
+    var file = try parse(testing.allocator,
+        \\{"entities":[{"components":[]},{"parent_index":0,"components":[]},{"parent_index":null,"components":[]}]}
+    );
+    defer deinit(testing.allocator, &file);
+    try testing.expectEqual(@as(?u32, null), file.entities[0].parent_index);
+    try testing.expectEqual(@as(?u32, 0), file.entities[1].parent_index);
+    try testing.expectEqual(@as(?u32, null), file.entities[2].parent_index);
+    try testing.expectError(error.UnknownField, parse(testing.allocator, "{\"entities\":[{\"index\":0}]}"));
+    try testing.expectError(error.InvalidSceneData, parse(testing.allocator, "{\"entities\":[{\"parent_index\":-1}]}"));
+    try testing.expectError(error.InvalidSceneData, parse(testing.allocator, "{\"entities\":[{\"parent_index\":1.5}]}"));
+    try testing.expectError(error.InvalidSceneData, parse(testing.allocator, "{\"entities\":[{\"parent_index\":4294967296}]}"));
+}
+
+test "parse cleans nested objects on invalid fields and allocation failure" {
+    try testing.expectError(error.UnknownField, parse(testing.allocator,
+        \\{"entities":[{"name":"child","components":[{"kind":"position","x":1},{"kind":"text","label":"yes"}],"bad":true}]}
+    ));
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator) !void {
+            var file = try parse(allocator,
+                \\{"entities":[{"name":"parent","components":[{"kind":"position","x":1},{"kind":"text","label":"yes"}]},{"parent_index":0,"components":[]}]}
+            );
+            defer deinit(allocator, &file);
+            try testing.expectEqual(@as(?u32, 0), file.entities[1].parent_index);
+        }
+    }.probe, .{});
 }
