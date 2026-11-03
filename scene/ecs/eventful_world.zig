@@ -25,7 +25,7 @@ pub fn EventfulWorld(comptime StoresT: type, comptime bus_capacity: usize) type 
         }
 
         pub fn subscribe(self: *Self, handler: events.Handler) !void {
-            try self.bus.subscribe(handler);
+            _ = try self.bus.subscribe(handler);
         }
 
         /// Creates an entity and emits `entity_created`.
