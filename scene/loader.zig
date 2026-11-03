@@ -13,7 +13,8 @@ pub const Loader = struct {
     // Entities have index, and optional component values (position, velocity, age).
     // This stub validates format and creates smoke entities if world empty.
     // Full implementation requires component-type resolution at comptime.
-    pub fn loadWorld(comptime Stores: type, allocator: std.mem.Allocator, world: anytype, descriptor_bytes: []const u8) !void {
+    pub fn loadWorld(comptime StoresT: type, allocator: std.mem.Allocator, world: anytype, descriptor_bytes: []const u8) !void {
+        _ = StoresT;
         // First validate the descriptor format.
         const desc = try format.parseDescriptor(allocator, descriptor_bytes);
         _ = desc; // For now, descriptor is just a sanity check.

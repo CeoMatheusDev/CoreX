@@ -13,4 +13,5 @@ test {
     _ = @import("project_opening.zig");
     _ = @import("resource_discovery.zig");
     _ = @import("editor_lifecycle.zig");
+    _ = @import("editor_session.zig");
 }

@@ -65,7 +65,8 @@ pub fn Scene(comptime WorldT: type) type {
         /// Load entities/components into the World from a descriptor.
         /// Used by Runtime when loading a scene from file.
         pub fn loadWorld(self: *Self, descriptor_bytes: []const u8) anyerror!void {
-            try format.parseDescriptor(self.allocator, descriptor_bytes);
+            const desc = try format.parseDescriptor(self.allocator, descriptor_bytes);
+            _ = desc;
             // Full implementation requires per-field conversion; for milestone
             // we provide a stub that validates descriptor format and preserves
             // existing smoke scene behavior. The loader will be implemented in
@@ -78,9 +79,7 @@ pub fn Scene(comptime WorldT: type) type {
             // Stub: in full implementation this builds a format.SceneFile
             // from self.world_state and serializes to JSON.
             // For now returns a minimal descriptor that preserves config.
-            const json = try std.fmt.allocPrint(allocator, 
-                "{{\"entity_capacity\": {}, \"system_capacity\": {}}}", 
-                .{self.world_state.entityCapacity(), self.systems.capacity()});
+            const json = try std.fmt.allocPrint(allocator, "{{\"entity_capacity\": {}, \"system_capacity\": {}}}", .{ self.world_state.entityCapacity(), self.systems.capacity() });
             return json;
         }
 

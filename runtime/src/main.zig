@@ -6,11 +6,12 @@ const run_mode = @import("run_mode.zig");
 /// so without this bridge every execution request stays `core_unavailable`.
 const Context = struct {
     gpa: std.mem.Allocator,
+    io: std.Io,
 };
 
 fn runHeadless(context: ?*anyopaque, request: app.bootstrap.RunRequest) anyerror!app.bootstrap.RunReport {
     const state: *Context = @ptrCast(@alignCast(context.?));
-    const report = try run_mode.run(state.gpa, .{ .frames = request.frames });
+    const report = try run_mode.run(state.gpa, .{ .frames = request.frames, .scene_path = request.scene_path, .io = state.io });
     return .{
         .frames = report.frames,
         .steps = report.steps,
@@ -23,7 +24,7 @@ fn runHeadless(context: ?*anyopaque, request: app.bootstrap.RunRequest) anyerror
 }
 
 pub fn main(init: std.process.Init) void {
-    var context: Context = .{ .gpa = init.gpa };
+    var context: Context = .{ .gpa = init.gpa, .io = init.io };
     const code = app.bootstrap.entryWith(init, .runtime, .{
         .context = @ptrCast(&context),
         .run = runHeadless,
