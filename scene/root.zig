@@ -36,6 +36,7 @@ test {
     _ = @import("ecs/query.zig");
     _ = @import("ecs/transform.zig");
     _ = @import("ecs/transform2d.zig");
+    _ = @import("ecs/events.zig");
     _ = @import("scene.zig");
     _ = @import("content_format.zig");
     _ = @import("content_loader.zig");
