@@ -1,4 +1,13 @@
-# CoreXEditor
+# CoreX Editor
+
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
+
+Standalone Zig 0.17.0 + C23 project-validation bootstrap. It validates project documents and configuration; it is not yet a graphical Editor.
+
+> [!NOTE]
+> Current capability: headless project validation only. Scene editing, graphical UI, and normal project opening are not implemented.
+
+---
 
 > **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
 
