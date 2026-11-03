@@ -60,7 +60,9 @@ defer allocator.free(json);
 
 ## Transforms dirty
 
-`tryMarkDirty(World, &world, entity)` marca a entidade e sua subárvore; `tryPropagateDirty` recalcula em ordem pai→filho mesmo se os índices de entidade estiverem invertidos. Marcar uma folha não recalcula irmãos. Para erro de alocação ou hierarquia inválida, os métodos `try` retornam erro e mantêm a raiz da subárvore em dirty para nova tentativa; transforms já calculados são provisórios até sucesso. As APIs originais `markDirty`/`propagateDirty` mantêm assinaturas `void` e falham imediatamente em caso de erro — prefira as versões `try`. Com zero marcas a propagação não aloca; com marcas, o trabalho inclui subárvores afetadas e percursos de ancestrais, sem promessa geral de O(dirty). O chamador deve marcar mudanças de transform **e reparenting**.
+`markDirty(World, &world, entity)` preserva o comportamento original: marca a entidade **e todos os ancestrais**, portanto a subárvore do ancestral mais alto será recalculada. `dirtyCount` inclui essas marcas. A API é `void` e best-effort: uma falha de alocação pode deixar marcas parciais sem aviso. `tryMarkDirtyWithAncestors` oferece a mesma marcação com erro explícito; após erro, corrija a causa e repita a marcação antes de propagar, pois marcas anteriores são mantidas.
+
+Para limitar o trabalho à subárvore alterada, `tryMarkDirty` marca apenas a entidade; seus ancestrais devem ter transforms mundiais válidos. Marcar uma folha assim não recalcula irmãos. `tryPropagateDirty` recalcula em ordem pai→filho mesmo se os índices estiverem invertidos. Em caso de erro ele preserva uma marca para nova tentativa, mas transforms já calculados são provisórios até o sucesso. `propagateDirty` continua `void` e best-effort, sem informar falhas; prefira a versão `try` quando for necessário confirmá-las. Ciclos e handles obsoletos não provocam laços infinitos. Com zero marcas a propagação não aloca; com marcas, o trabalho inclui subárvores afetadas e percursos de ancestrais, sem promessa geral de O(dirty). O chamador deve marcar mudanças de transform **e reparenting**.
 
 ## Uso
 

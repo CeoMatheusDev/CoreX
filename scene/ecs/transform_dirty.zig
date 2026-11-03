@@ -1,10 +1,11 @@
 //! Incremental 3D transform propagation.
 //!
 //! `tryMarkDirty` marks an entity and its descendants for recomputation;
+//! `markDirty` also marks its ancestors, as in the original void API.
 //! `tryPropagateDirty` processes affected subtrees parent-first, regardless of
-//! entity slot order. The work scales with the marked subtrees plus ancestor
-//! walks; an empty dirty set takes O(1). Setup may allocate. Errors are exposed
-//! by the `try` APIs; the original void APIs remain available and fail fast.
+//! entity slot order. Work scales with marked subtrees and ancestor walks; an
+//! empty dirty set takes O(1). Setup may allocate. Use the `try` APIs when
+//! errors must be observed; the original void APIs remain best-effort.
 const std = @import("std");
 const entity_mod = @import("entity.zig");
 const Entity = entity_mod.Entity;
@@ -18,14 +19,16 @@ pub const TransformDirty = struct {
     subtree_dirty: bool = false,
 };
 
-/// Original void API. For recoverable errors, use `tryMarkDirty` instead.
+/// Original best-effort API: mark the entity and every ancestor, so the
+/// uppermost ancestor's subtree will be recomputed. Like the original API, it
+/// does not report allocation failures and may leave only some markers set.
+/// Use `tryMarkDirtyWithAncestors` when failure must be observed.
 pub fn markDirty(comptime WorldT: type, world: *WorldT, entity: Entity) void {
-    tryMarkDirty(WorldT, world, entity) catch |err| {
-        std.debug.panic("markDirty failed: {s}; use tryMarkDirty to handle errors", .{@errorName(err)});
-    };
+    markAncestors(WorldT, world, entity, true) catch {};
 }
 
-/// Marks an entity and implicitly its subtree. No mutation occurs on failure.
+/// Marks only an entity and implicitly its subtree. Ancestors are not marked.
+/// No mutation occurs on failure; their world transforms must already be valid.
 pub fn tryMarkDirty(comptime WorldT: type, world: *WorldT, entity: Entity) !void {
     if (!world.isAlive(entity)) return error.InvalidEntity;
     if (world.get(TransformDirty, entity)) |dirty| {
@@ -35,11 +38,36 @@ pub fn tryMarkDirty(comptime WorldT: type, world: *WorldT, entity: Entity) !void
     }
 }
 
-/// Original void API. For recoverable errors, use `tryPropagateDirty` instead.
+/// Fallible equivalent of `markDirty`: mark the entity and its ancestors.
+/// On error, earlier markers remain set; correct the problem and retry before
+/// propagation. Cycles and stale parent handles are rejected without recursion.
+pub fn tryMarkDirtyWithAncestors(comptime WorldT: type, world: *WorldT, entity: Entity) !void {
+    try markAncestors(WorldT, world, entity, false);
+}
+
+fn markAncestors(comptime WorldT: type, world: *WorldT, entity: Entity, comptime best_effort: bool) !void {
+    if (!world.isAlive(entity)) return error.InvalidEntity;
+    var current: ?Entity = entity;
+    var visited: u32 = 0;
+    const alive = world.aliveCount();
+    while (current) |node| {
+        if (!world.isAlive(node)) return error.InvalidHierarchy;
+        if (visited >= alive) return error.CycleDetected;
+        visited += 1;
+        if (best_effort) {
+            // The legacy API attempts every ancestor even if one insert fails.
+            tryMarkDirty(WorldT, world, node) catch {};
+        } else {
+            try tryMarkDirty(WorldT, world, node);
+        }
+        current = hierarchy.getParent(WorldT, world, node);
+    }
+}
+
+/// Original best-effort API. Use `tryPropagateDirty` to observe failures;
+/// on failure a marker remains available for retry rather than being lost.
 pub fn propagateDirty(comptime WorldT: type, world: *WorldT) void {
-    tryPropagateDirty(WorldT, world) catch |err| {
-        std.debug.panic("propagateDirty failed: {s}; use tryPropagateDirty to handle errors", .{@errorName(err)});
-    };
+    tryPropagateDirty(WorldT, world) catch {};
 }
 
 /// Recompute dirty subtrees parent-first using an iterative stack. On failure,
@@ -388,4 +416,174 @@ test "dirty propagation matches full tree recomputation across shuffled graphs" 
             try testing.expectEqual(expected[index], world.getConst(t3d.WorldTransform3D, entity).?.matrix.m03);
         }
     }
+}
+
+test "legacy marking preserves ancestor markers and recomputes their subtrees" {
+    var world = try TestWorld.init(testing.allocator, 8);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    // Children deliberately precede their ancestors in slot order.
+    const leaf = try world.create();
+    const sibling = try world.create();
+    const child = try world.create();
+    const root = try world.create();
+    try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(1, 0, 0) });
+    try world.add(t3d.LocalTransform3D, child, .{ .matrix = .translation(2, 0, 0) });
+    try world.add(t3d.LocalTransform3D, leaf, .{ .matrix = .translation(3, 0, 0) });
+    try world.add(t3d.LocalTransform3D, sibling, .{ .matrix = .translation(4, 0, 0) });
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, root, child);
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, child, leaf);
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, root, sibling);
+    try tryMarkDirty(TestWorld, &world, root);
+    try tryPropagateDirty(TestWorld, &world);
+
+    world.get(t3d.LocalTransform3D, root).?.matrix.m03 = 100;
+    world.get(t3d.LocalTransform3D, child).?.matrix.m03 = 10;
+    world.get(t3d.LocalTransform3D, leaf).?.matrix.m03 = 5;
+    world.get(t3d.LocalTransform3D, sibling).?.matrix.m03 = 7;
+    // Existing false flags must become true, as in the original API.
+    try world.add(TransformDirty, child, .{ .subtree_dirty = false });
+    markDirty(TestWorld, &world, leaf);
+    try testing.expectEqual(@as(usize, 3), dirtyCount(TestWorld, &world));
+    for ([_]Entity{ leaf, child, root }) |e| {
+        try testing.expect(world.getConst(TransformDirty, e).?.subtree_dirty);
+    }
+    try testing.expect(!world.has(TransformDirty, sibling));
+    propagateDirty(TestWorld, &world);
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+    try testing.expectEqual(@as(i32, 100), world.getConst(t3d.WorldTransform3D, root).?.matrix.m03);
+    try testing.expectEqual(@as(i32, 110), world.getConst(t3d.WorldTransform3D, child).?.matrix.m03);
+    try testing.expectEqual(@as(i32, 115), world.getConst(t3d.WorldTransform3D, leaf).?.matrix.m03);
+    try testing.expectEqual(@as(i32, 107), world.getConst(t3d.WorldTransform3D, sibling).?.matrix.m03);
+}
+
+test "checked ancestor marking retains partial marks on allocation failure and can retry" {
+    var failing = testing.FailingAllocator.init(testing.allocator, .{});
+    const allocator = failing.allocator();
+    var world = try TestWorld.init(allocator, 8);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, allocator, &world);
+    var chain: [5]Entity = undefined;
+    for (&chain, 0..) |*entity, index| {
+        entity.* = try world.create();
+        try world.add(t3d.LocalTransform3D, entity.*, .{ .matrix = .translation(1, 0, 0) });
+        if (index > 0) try hierarchy.setParent(TestWorld, allocator, &world, chain[index - 1], entity.*);
+    }
+    // First insertion allocates two dense buffers. Growing beyond four marks
+    // is the next allocation, so the root remains unmarked on this failure.
+    failing.fail_index = failing.alloc_index + 2;
+    try testing.expectError(error.OutOfMemory, tryMarkDirtyWithAncestors(TestWorld, &world, chain[4]));
+    try testing.expectEqual(@as(usize, 4), dirtyCount(TestWorld, &world));
+    try testing.expect(!world.has(TransformDirty, chain[0]));
+    for (chain[1..]) |entity| try testing.expect(world.has(TransformDirty, entity));
+
+    failing.fail_index = std.math.maxInt(usize);
+    try tryMarkDirtyWithAncestors(TestWorld, &world, chain[4]);
+    try testing.expectEqual(@as(usize, 5), dirtyCount(TestWorld, &world));
+    try tryPropagateDirty(TestWorld, &world);
+    try testing.expectEqual(@as(i32, 5), world.getConst(t3d.WorldTransform3D, chain[4]).?.matrix.m03);
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+}
+
+test "legacy void APIs remain best effort on invalid handles and allocation failure" {
+    var failing = testing.FailingAllocator.init(testing.allocator, .{});
+    const allocator = failing.allocator();
+    var world = try TestWorld.init(allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, allocator, &world);
+    const root = try world.create();
+    const stale = try world.create();
+    try world.destroy(stale);
+    try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(7, 0, 0) });
+    markDirty(TestWorld, &world, stale);
+    try testing.expectError(error.InvalidEntity, tryMarkDirtyWithAncestors(TestWorld, &world, stale));
+    failing.fail_index = failing.alloc_index;
+    markDirty(TestWorld, &world, root); // Must not panic on OOM.
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+
+    failing.fail_index = std.math.maxInt(usize);
+    markDirty(TestWorld, &world, root);
+    failing.fail_index = failing.alloc_index;
+    propagateDirty(TestWorld, &world); // The pending root remains retryable.
+    try testing.expect(world.has(TransformDirty, root));
+    failing.fail_index = std.math.maxInt(usize);
+    propagateDirty(TestWorld, &world);
+    try testing.expectEqual(@as(i32, 7), world.getConst(t3d.WorldTransform3D, root).?.matrix.m03);
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+}
+
+test "ancestor marking bounds cycles and detects stale parent handles" {
+    var world = try TestWorld.init(testing.allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    const a = try world.create();
+    const b = try world.create();
+    try world.add(hierarchy.Parent, a, .{ .entity = b });
+    try world.add(hierarchy.Parent, b, .{ .entity = a });
+    try testing.expectError(error.CycleDetected, tryMarkDirtyWithAncestors(TestWorld, &world, a));
+    try testing.expectEqual(@as(usize, 2), dirtyCount(TestWorld, &world));
+    markDirty(TestWorld, &world, a); // A corrupt cycle must not loop forever.
+    propagateDirty(TestWorld, &world); // Nor panic when validation fails.
+    try testing.expectEqual(@as(usize, 2), dirtyCount(TestWorld, &world));
+    _ = try world.remove(hierarchy.Parent, b);
+    try world.destroy(b);
+    try testing.expectError(error.InvalidHierarchy, tryMarkDirtyWithAncestors(TestWorld, &world, a));
+}
+
+test "remarking an existing ancestor chain does not allocate" {
+    var counter = @import("../testing_allocator.zig").CountingAllocator{ .backing = testing.allocator };
+    const allocator = counter.allocator();
+    var world = try TestWorld.init(allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, allocator, &world);
+    const root = try world.create();
+    const child = try world.create();
+    try hierarchy.setParent(TestWorld, allocator, &world, root, child);
+    try tryMarkDirtyWithAncestors(TestWorld, &world, child);
+    counter.resetCounters();
+    markDirty(TestWorld, &world, child);
+    try testing.expectEqual(@as(usize, 0), counter.allocations);
+    try testing.expectEqual(@as(usize, 2), dirtyCount(TestWorld, &world));
+}
+
+test "legacy marking attempts existing ancestors after a child allocation fails" {
+    var failing = testing.FailingAllocator.init(testing.allocator, .{});
+    const allocator = failing.allocator();
+    var world = try TestWorld.init(allocator, 8);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, allocator, &world);
+    const root = try world.create();
+    const parent = try world.create();
+    const leaf = try world.create();
+    const filler1 = try world.create();
+    const filler2 = try world.create();
+    try hierarchy.setParent(TestWorld, allocator, &world, root, parent);
+    try hierarchy.setParent(TestWorld, allocator, &world, parent, leaf);
+    for ([_]Entity{ root, parent, filler1, filler2 }) |entity| {
+        try world.add(TransformDirty, entity, .{ .subtree_dirty = false });
+    }
+    // The dense set has four slots, so inserting the leaf needs to grow it.
+    failing.fail_index = failing.alloc_index;
+    markDirty(TestWorld, &world, leaf);
+    try testing.expect(!world.has(TransformDirty, leaf));
+    try testing.expect(world.getConst(TransformDirty, parent).?.subtree_dirty);
+    try testing.expect(world.getConst(TransformDirty, root).?.subtree_dirty);
+}
+
+test "checked ancestor marking releases resources at every allocation failure" {
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator) !void {
+            var world = try TestWorld.init(allocator, 8);
+            defer world.deinit();
+            defer hierarchy.clear(TestWorld, allocator, &world);
+            var previous: ?Entity = null;
+            for (0..5) |_| {
+                const entity = try world.create();
+                if (previous) |parent| try hierarchy.setParent(TestWorld, allocator, &world, parent, entity);
+                previous = entity;
+            }
+            try tryMarkDirtyWithAncestors(TestWorld, &world, previous.?);
+            try testing.expectEqual(@as(usize, 5), dirtyCount(TestWorld, &world));
+        }
+    }.probe, .{});
 }
