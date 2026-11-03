@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Extended `scene/ecs/events.zig` with handler lifecycle: `subscribe` now returns a `Subscription` token, plus `unsubscribe` (swap-remove, stale-safe) and `clear`. Handlers stored as optional slots so freed slots are reusable. Scene tests: 90/90.
 - Added `scene/ecs/eventful_world.zig`: `EventfulWorld(Stores, bus_capacity)` wraps `World(Stores)` and auto-emits `entity_created`/`entity_destroyed`/`component_added<T>`/`component_removed<T>` into an `events.Bus`. Zero overhead with no subscribers; `World` untouched. Scene tests: 87/87.
 - Added `scene/ecs/events.zig`: synchronous fixed-capacity event bus (`Bus(capacity)`) for entity/component lifecycle events (`entity_created`, `entity_destroyed`, `component_added<T>`, `component_removed<T>`). Registration-order dispatch, first-error stops, no allocation in the hot path. Optional and decoupled from `World`. Scene tests: 83/83.
 - Added `scene/ecs/transform2d.zig`: 2D affine transform hierarchy with rotation and scale via fixed-point Q16.16 integer math (deterministic, no floats in the hot path). `Mat2x3` (2x3 matrix with 360-entry sin/cos LUT), `LocalTransform2D`/`WorldTransform2D` components, `propagateTransforms2D` composing parent world × local. Scene tests: 79/79.

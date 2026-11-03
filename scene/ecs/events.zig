@@ -30,7 +30,13 @@ pub const Event = struct {
 
 pub const Handler = *const fn (Event) anyerror!void;
 
-pub const BusError = error{ CapacityExceeded, DuplicateHandler };
+pub const BusError = error{ CapacityExceeded, DuplicateHandler, NotSubscribed };
+
+/// Handle returned by `subscribe`; pass to `unsubscribe` to remove.
+pub const Subscription = struct {
+    index: usize,
+    handler: Handler,
+};
 
 /// Fixed-capacity synchronous event bus. `capacity` handlers max.
 pub fn Bus(comptime capacity: usize) type {
@@ -38,24 +44,52 @@ pub fn Bus(comptime capacity: usize) type {
     return struct {
         const Self = @This();
 
-        handlers: [capacity]Handler = undefined,
+        handlers: [capacity]?Handler = @splat(null),
         len: usize = 0,
 
-        pub fn subscribe(self: *Self, handler: Handler) BusError!void {
+        /// Subscribes a handler and returns a token for later removal.
+        pub fn subscribe(self: *Self, handler: Handler) BusError!Subscription {
+            // Find a free slot (null) or append.
+            for (&self.handlers, 0..) |*slot, i| {
+                if (slot.* == null) {
+                    slot.* = handler;
+                    self.len += 1;
+                    return .{ .index = i, .handler = handler };
+                }
+            }
             if (self.len == capacity) return error.CapacityExceeded;
-            self.handlers[self.len] = handler;
+            const idx = self.len;
+            self.handlers[idx] = handler;
             self.len += 1;
+            return .{ .index = idx, .handler = handler };
+        }
+
+        /// Removes a previously subscribed handler. Swap-removes to keep the
+        /// array dense; returns error if the subscription is stale.
+        pub fn unsubscribe(self: *Self, sub: Subscription) BusError!void {
+            const slot = &self.handlers[sub.index];
+            if (slot.* == null or @intFromPtr(slot.*.?) != @intFromPtr(sub.handler)) {
+                return error.NotSubscribed;
+            }
+            slot.* = null;
+            self.len -= 1;
+        }
+
+        /// Removes all handlers.
+        pub fn clear(self: *Self) void {
+            @memset(&self.handlers, null);
+            self.len = 0;
         }
 
         pub fn handlerCount(self: *const Self) usize {
             return self.len;
         }
 
-        /// Dispatches the event to all handlers in registration order.
+        /// Dispatches the event to all handlers in slot order.
         /// The first handler error stops dispatch and propagates.
         pub fn emit(self: *const Self, event: Event) anyerror!void {
-            for (self.handlers[0..self.len]) |h| {
-                try h(event);
+            for (self.handlers) |slot| {
+                if (slot) |h| try h(event);
             }
         }
     };
@@ -111,8 +145,8 @@ fn failingHandler(event: Event) anyerror!void {
 test "bus dispatches events in registration order" {
     sink_len = 0;
     var bus = Bus(4){};
-    try bus.subscribe(&sinkHandler);
-    try bus.subscribe(&sinkHandler);
+    _ = try bus.subscribe(&sinkHandler);
+    _ = try bus.subscribe(&sinkHandler);
     try testing.expectEqual(@as(usize, 2), bus.handlerCount());
 
     const e: Entity = .{ .index = 5, .generation = 0 };
@@ -129,7 +163,7 @@ test "bus dispatches events in registration order" {
 test "component events carry type name and pointer" {
     sink_len = 0;
     var bus = Bus(2){};
-    try bus.subscribe(&sinkHandler);
+    _ = try bus.subscribe(&sinkHandler);
 
     const Position = struct { x: i32, y: i32 };
     const pos: Position = .{ .x = 10, .y = 20 };
@@ -146,14 +180,56 @@ test "component events carry type name and pointer" {
 test "first handler error stops dispatch" {
     sink_len = 0;
     var bus = Bus(4){};
-    try bus.subscribe(&failingHandler);
-    try bus.subscribe(&sinkHandler);
+    _ = try bus.subscribe(&failingHandler);
+    _ = try bus.subscribe(&sinkHandler);
     try testing.expectError(error.HandlerFailed, bus.emit(entityCreated(.{ .index = 0, .generation = 0 })));
     try testing.expectEqual(@as(usize, 0), sink_len);
 }
 
 test "capacity is enforced" {
     var bus = Bus(1){};
-    try bus.subscribe(&sinkHandler);
+    _ = try bus.subscribe(&sinkHandler);
     try testing.expectError(error.CapacityExceeded, bus.subscribe(&sinkHandler));
+}
+
+test "unsubscribe removes the handler and frees the slot" {
+    sink_len = 0;
+    var bus = Bus(4){};
+    const sub_a = try bus.subscribe(&sinkHandler);
+    const sub_b = try bus.subscribe(&failingHandler);
+    try testing.expectEqual(@as(usize, 2), bus.handlerCount());
+
+    try bus.unsubscribe(sub_a);
+    try testing.expectEqual(@as(usize, 1), bus.handlerCount());
+
+    // Only failingHandler remains — emit must fail.
+    try testing.expectError(error.HandlerFailed, bus.emit(entityCreated(.{ .index = 0, .generation = 0 })));
+
+    // Re-subscribe reuses the freed slot.
+    const sub_c = try bus.subscribe(&sinkHandler);
+    _ = try bus.unsubscribe(sub_b);
+    _ = sub_c;
+    try testing.expectEqual(@as(usize, 1), bus.handlerCount());
+    sink_len = 0;
+    try bus.emit(entityCreated(.{ .index = 9, .generation = 0 }));
+    try testing.expectEqual(@as(usize, 1), sink_len);
+}
+
+test "unsubscribe with stale subscription fails" {
+    var bus = Bus(2){};
+    const sub = try bus.subscribe(&sinkHandler);
+    try bus.unsubscribe(sub);
+    try testing.expectError(error.NotSubscribed, bus.unsubscribe(sub));
+}
+
+test "clear removes all handlers" {
+    var bus = Bus(4){};
+    _ = try bus.subscribe(&sinkHandler);
+    _ = try bus.subscribe(&failingHandler);
+    try testing.expectEqual(@as(usize, 2), bus.handlerCount());
+    bus.clear();
+    try testing.expectEqual(@as(usize, 0), bus.handlerCount());
+    sink_len = 0;
+    try bus.emit(entityCreated(.{ .index = 0, .generation = 0 }));
+    try testing.expectEqual(@as(usize, 0), sink_len);
 }
