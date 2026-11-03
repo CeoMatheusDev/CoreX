@@ -6,6 +6,8 @@ pub const sparse_set = @import("ecs/sparse_set.zig");
 pub const world = @import("ecs/world.zig");
 pub const systems = @import("ecs/systems.zig");
 pub const scene = @import("scene.zig");
+pub const format = @import("format.zig");
+pub const loader = @import("loader.zig");
 
 pub const Entity = entity.Entity;
 pub const EntityPool = entity.EntityPool;
