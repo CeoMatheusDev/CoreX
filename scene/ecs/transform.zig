@@ -84,6 +84,7 @@ const TestWorld = world_mod.World(TransformStores);
 test "root entity world transform equals local" {
     var world = try TestWorld.init(testing.allocator, 8);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
 
     const root = try world.create();
     try world.add(LocalTransform, root, .{ .x = 10, .y = 20 });
@@ -97,6 +98,7 @@ test "root entity world transform equals local" {
 test "child world transform is parent world plus local" {
     var world = try TestWorld.init(testing.allocator, 8);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
 
     const parent_e = try world.create();
     try world.add(LocalTransform, parent_e, .{ .x = 100, .y = 0 });
@@ -118,6 +120,7 @@ test "child world transform is parent world plus local" {
 test "grandchild accumulates through the chain" {
     var world = try TestWorld.init(testing.allocator, 8);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
 
     const a = try world.create();
     try world.add(LocalTransform, a, .{ .x = 1, .y = 1 });
@@ -140,6 +143,7 @@ test "grandchild accumulates through the chain" {
 test "moving parent updates children after re-propagation" {
     var world = try TestWorld.init(testing.allocator, 8);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
 
     const p = try world.create();
     try world.add(LocalTransform, p, .{ .x = 0, .y = 0 });

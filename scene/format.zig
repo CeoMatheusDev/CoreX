@@ -30,10 +30,10 @@ pub fn parseDescriptor(allocator: std.mem.Allocator, bytes: []const u8) !SceneFi
     // A full parser is out of scope; this loader validates presence of fields
     // and builds the descriptor without hidden allocations beyond the arrays.
     var parsed = try std.json.parseFromSlice(std.json.Value, allocator, bytes, .{});
-    errdefer parsed.deinit();
+    defer parsed.deinit();
     const root = parsed.value;
     if (root != .object) return error.ParseError;
-    
+
     // Minimal extraction: only entity_capacity and systems count are required.
     // Full entity parsing requires component-type resolution at comptime.
     // For this milestone, we provide a stub loader and a descriptor definition.

@@ -4,7 +4,11 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
-- Added `scene/ecs/transform_dirty.zig`: dirty-flag optimization for transform propagation. `markDirty(world, entity)` marks an entity and its subtree; `propagateDirty` recomputes only dirty entities + descendants, turning O(n) per frame into O(dirty). Scene tests: 97/97.
+- Extended content-scene JSON with optional parent and sibling file indices. Round-trip preserves generational handle remapping and child order; forward parents, cycles, malformed links, allocator failure and cleanup are covered. Flat descriptors remain unchanged; older strict parsers cannot read the new fields.
+- Fixed dirty 3D propagation for reversed entity order and overlapping marks; added fallible/retryable APIs while retaining the original void signatures. Empty propagation allocates nothing; work includes affected subtrees and ancestor walks, not a general O(dirty) bound.
+- Corrected negative Q16.16 rounding shared by 2D/3D transforms. Fixed hierarchy reparenting rollback and stale child-slice ownership, descriptor-parser cleanup, scene test leaks and Scene package file inventory.
+
+- Added `scene/ecs/transform_dirty.zig`: dirty-flag propagation for 3D transforms; see the correction above for ordering, error handling, and complexity.
 - Added `scene/ecs/transform3d.zig`: 3D affine transform hierarchy (ADR-003 scene_3d scope) with 4×4 `Mat4` in Q16.16 fixed-point, rotation LUTs around X/Y/Z, `LocalTransform3D`/`WorldTransform3D`, and `propagateTransforms3D` (world = parent.world × local). Deterministic integer math. Scene tests: 95/95.
 - Extended `scene/ecs/events.zig` with handler lifecycle: `subscribe` now returns a `Subscription` token, plus `unsubscribe` (swap-remove, stale-safe) and `clear`. Handlers stored as optional slots so freed slots are reusable. Scene tests: 90/90.
 - Added `scene/ecs/eventful_world.zig`: `EventfulWorld(Stores, bus_capacity)` wraps `World(Stores)` and auto-emits `entity_created`/`entity_destroyed`/`component_added<T>`/`component_removed<T>` into an `events.Bus`. Zero overhead with no subscribers; `World` untouched. Scene tests: 87/87.

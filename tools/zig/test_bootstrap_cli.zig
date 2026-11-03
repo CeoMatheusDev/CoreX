@@ -990,6 +990,54 @@ test "headless run is deterministic for equal frame counts" {
     try std.testing.expect(try uintField(different, "state_checksum") != try uintField(first, "state_checksum"));
 }
 
+test "runtime loads a flat content scene read-only and deterministically" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    const scene_path = try std.fs.path.join(a, &.{ f.directory, "cena.scene" });
+    defer a.free(scene_path);
+    const scene = "{\"entities\":[{\"components\":[{\"kind\":\"position\",\"x\":1,\"y\":2},{\"kind\":\"velocity\",\"x\":1,\"y\":1}]},{\"components\":[{\"kind\":\"age\",\"ticks\":0}]}]}";
+    try Io.Dir.cwd().writeFile(io, .{ .sub_path = scene_path, .data = scene });
+    const before = try Io.Dir.cwd().statFile(io, scene_path, .{});
+
+    var first = Run.init();
+    defer first.deinit();
+    try f.runApp(&first, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "60", "--scene", scene_path }, .{ .expected = 0 });
+    try expectTextField(try first.event("runtime.run_starting"), "scene", "content");
+    const first_complete = try first.event("runtime.run_complete");
+    try expectTextField(first_complete, "scene", "content");
+    try expectIntField(first_complete, "entities_alive", 2);
+    try expectIntField(first_complete, "frames", 60);
+    try expectBoolField(first_complete, "gpu_created", false);
+
+    var second = Run.init();
+    defer second.deinit();
+    try f.runApp(&second, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "60", "--scene", scene_path }, .{ .expected = 0 });
+    const second_complete = try second.event("runtime.run_complete");
+    try std.testing.expectEqual(try uintField(first_complete, "state_checksum"), try uintField(second_complete, "state_checksum"));
+    const after = try Io.Dir.cwd().statFile(io, scene_path, .{});
+    try std.testing.expectEqual(before.mtime.nanoseconds, after.mtime.nanoseconds);
+    const bytes = try Io.Dir.cwd().readFileAlloc(io, scene_path, a, .limited(4096));
+    defer a.free(bytes);
+    try std.testing.expectEqualStrings(scene, bytes);
+}
+
+test "runtime rejects content hierarchy rather than discarding links" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    const scene_path = try std.fs.path.join(a, &.{ f.directory, "hierarquia.scene" });
+    defer a.free(scene_path);
+    try Io.Dir.cwd().writeFile(io, .{ .sub_path = scene_path, .data = "{\"entities\":[{},{\"parent_index\":0}]}" });
+    var run = Run.init();
+    defer run.deinit();
+    try f.runApp(&run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "1", "--scene", scene_path }, .{ .expected = 70 });
+    const failed = try run.event("runtime.run_failed");
+    try expectTextField(failed, "code", "HierarchyUnsupported");
+    try expectBoolField(failed, "gpu_created", false);
+    try std.testing.expectEqual(@as(usize, 0), run.countOf("runtime.run_complete"));
+}
+
 test "execution flags are explicit bounded and rejected otherwise" {
     try requirePosix();
     var f = try Fixture.init();

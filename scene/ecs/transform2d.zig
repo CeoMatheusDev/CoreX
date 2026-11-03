@@ -16,6 +16,7 @@ const std = @import("std");
 const entity_mod = @import("entity.zig");
 const Entity = entity_mod.Entity;
 const hierarchy = @import("hierarchy.zig");
+const fixed = @import("fixed.zig");
 
 /// Fixed-point scale: 1.0 = 65536.
 pub const fixed_one: i32 = 65536;
@@ -58,31 +59,23 @@ pub const Mat2x3 = struct {
     /// Compose: self * other (apply other first, then self).
     pub fn mul(self: Mat2x3, other: Mat2x3) Mat2x3 {
         return .{
-            .a = mulFixed(self.a, other.a) + mulFixed(self.c, other.b),
-            .b = mulFixed(self.b, other.a) + mulFixed(self.d, other.b),
-            .c = mulFixed(self.a, other.c) + mulFixed(self.c, other.d),
-            .d = mulFixed(self.b, other.c) + mulFixed(self.d, other.d),
-            .tx = mulFixed(self.a, other.tx) + mulFixed(self.c, other.ty) + self.tx,
-            .ty = mulFixed(self.b, other.tx) + mulFixed(self.d, other.ty) + self.ty,
+            .a = fixed.mulQ16(self.a, other.a) + fixed.mulQ16(self.c, other.b),
+            .b = fixed.mulQ16(self.b, other.a) + fixed.mulQ16(self.d, other.b),
+            .c = fixed.mulQ16(self.a, other.c) + fixed.mulQ16(self.c, other.d),
+            .d = fixed.mulQ16(self.b, other.c) + fixed.mulQ16(self.d, other.d),
+            .tx = fixed.mulQ16(self.a, other.tx) + fixed.mulQ16(self.c, other.ty) + self.tx,
+            .ty = fixed.mulQ16(self.b, other.tx) + fixed.mulQ16(self.d, other.ty) + self.ty,
         };
     }
 
     /// Transform a point.
     pub fn applyPoint(self: Mat2x3, x: i32, y: i32) struct { x: i32, y: i32 } {
         return .{
-            .x = mulFixed(self.a, x) + mulFixed(self.c, y) + self.tx,
-            .y = mulFixed(self.b, x) + mulFixed(self.d, y) + self.ty,
+            .x = fixed.mulQ16(self.a, x) + fixed.mulQ16(self.c, y) + self.tx,
+            .y = fixed.mulQ16(self.b, x) + fixed.mulQ16(self.d, y) + self.ty,
         };
     }
 };
-
-/// Q16.16 multiply: (a * b) >> 16 with rounding.
-fn mulFixed(a: i32, b: i32) i32 {
-    const wide: i64 = @as(i64, a) * @as(i64, b);
-    const half: i64 = 32768;
-    const rounded = if (wide >= 0) wide + half else wide - half;
-    return @intCast(rounded >> 16);
-}
 
 /// Component: local 2D affine transform relative to parent.
 pub const LocalTransform2D = struct {
@@ -155,6 +148,7 @@ const TestWorld = world_mod.World(T2DStores);
 test "identity transform stays identity" {
     var world = try TestWorld.init(testing.allocator, 4);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
     const e = try world.create();
     try world.add(LocalTransform2D, e, .{ .matrix = .identity() });
     propagateTransforms2D(TestWorld, &world);
@@ -166,6 +160,7 @@ test "identity transform stays identity" {
 test "translation composes through hierarchy" {
     var world = try TestWorld.init(testing.allocator, 8);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
     const p = try world.create();
     try world.add(LocalTransform2D, p, .{ .matrix = .translation(100, 0) });
     const c = try world.create();
@@ -194,6 +189,7 @@ test "scale doubles coordinates" {
 test "rotation then translation through hierarchy" {
     var world = try TestWorld.init(testing.allocator, 8);
     defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
     const p = try world.create();
     try world.add(LocalTransform2D, p, .{ .matrix = .translation(100, 0) });
     const c = try world.create();
@@ -206,4 +202,10 @@ test "rotation then translation through hierarchy" {
     const pt = w.applyPoint(fixed_one, 0);
     try testing.expectEqual(@as(i32, 100), pt.x);
     try testing.expectEqual(fixed_one, pt.y);
+}
+
+test "2D identity composition preserves negative values exactly" {
+    const transform = Mat2x3{ .a = -65536, .b = -1234, .c = 5678, .d = 65536, .tx = -5, .ty = -17 };
+    try testing.expectEqualDeep(transform, Mat2x3.identity().mul(transform));
+    try testing.expectEqual(@as(i32, -5), Mat2x3.identity().applyPoint(-5, 0).x);
 }

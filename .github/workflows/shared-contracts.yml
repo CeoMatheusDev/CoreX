@@ -2,9 +2,9 @@ name: Application contracts and bootstraps
 
 on:
   push:
-    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
+    paths: ['core/**', 'scene/**', 'shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
   pull_request:
-    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
+    paths: ['core/**', 'scene/**', 'shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
   workflow_dispatch:
 
 permissions:
@@ -99,7 +99,7 @@ jobs:
           "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
       - name: Check formatting
         run: |
-          "$ZIG_EXE" fmt --check shared editor runtime tools/zig
+          "$ZIG_EXE" fmt --check core scene shared editor runtime tools/zig
       - name: Test Zig and C23 contracts (Debug)
         working-directory: shared
         run: |
@@ -117,7 +117,7 @@ jobs:
           cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build --summary all
       # Native Zig port of tools/test_bootstrap.py. The Python reference stays in
       # CI until this port is validated remotely and reaches full parity.
-      - name: Test real processes with native Zig probes (Debug; validation only)
+      - name: Test real processes with native Zig probes (Debug)
         working-directory: tools/zig
         run: |
           "$CI_CAPTURE" "$ZIG_EXE" build test-bootstrap-cli -j2 --summary all
@@ -151,7 +151,7 @@ jobs:
         run: |
           cd editor && "$CI_CAPTURE" "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
           cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
-      - name: Test real processes with native Zig probes (ReleaseSafe; validation only)
+      - name: Test real processes with native Zig probes (ReleaseSafe)
         working-directory: tools/zig
         run: |
           "$CI_CAPTURE" "$ZIG_EXE" build test-bootstrap-cli -Doptimize=ReleaseSafe -j2 --summary all
@@ -170,7 +170,7 @@ jobs:
           cd ../editor && "$CI_CAPTURE" "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
           cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
 
-# Validation bootstraps only; not a full graphical Editor/Runtime CI matrix. Native Windows needs a
+# Validation and headless bootstraps only; not a full graphical Editor/Runtime CI matrix. Native Windows needs a
 # verified Zig 0.17.0 Windows distribution (P16); no wheel is published at the
 # time of implementation. Cross-compilation must not be reported as native tests.
 
