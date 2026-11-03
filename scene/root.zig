@@ -11,6 +11,8 @@ pub const transform = @import("ecs/transform.zig");
 pub const transform2d = @import("ecs/transform2d.zig");
 pub const events = @import("ecs/events.zig");
 pub const eventful_world = @import("ecs/eventful_world.zig");
+pub const transform3d = @import("ecs/transform3d.zig");
+pub const transform_dirty = @import("ecs/transform_dirty.zig");
 pub const scene = @import("scene.zig");
 pub const format = @import("format.zig");
 pub const loader = @import("loader.zig");
@@ -41,6 +43,7 @@ test {
     _ = @import("ecs/events.zig");
     _ = @import("ecs/eventful_world.zig");
     _ = @import("ecs/transform3d.zig");
+    _ = @import("ecs/transform_dirty.zig");
     _ = @import("scene.zig");
     _ = @import("content_format.zig");
     _ = @import("content_loader.zig");
