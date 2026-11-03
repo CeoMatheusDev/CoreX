@@ -1,6 +1,6 @@
 # Editor/Runtime — registro de progresso
 
-**Atualizado:** 2026-11-02. Este arquivo é um registro cronológico de evidências por etapa, não um checklist de conclusão. Contagens e estados de CI em cada seção descrevem o momento em que aquela etapa foi registrada; não substituem a validação atual.
+**Atualizado:** 2026-11-03. Este arquivo é um registro cronológico de evidências por etapa, não um checklist de conclusão. Contagens e estados de CI em cada seção descrevem o momento em que aquela etapa foi registrada; não substituem a validação atual.
 
 ## Estado mais recente registrado
 
@@ -14,9 +14,27 @@
 - `zig build check -Dtarget=x86_64-windows-gnu` compilou Shared, Editor, Runtime e `tools/zig`. Isso é cross-compilação; nenhum executável Windows foi executado.
 - As builds instaladas nativas do Editor e Runtime passaram, e `tools/test_bootstrap.py` passou **33/33** testes contra os binários reais, incluindo handshake entre processos. Isso valida o protocolo de bootstrap, não gameplay, UI ou renderização GPU.
 - A CI remota passou em Contracts e Legacy Linux para a revisão inicial do PR: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542060627) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542061137). Após registrar os resultados, a revisão documental `320afac` também passou em ambos: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287660) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287419).
-- `zig build test` na raiz passou nativamente (**40/40** em Debug e ReleaseSafe) quando os pacotes foram preparados por `tools/prepare_legacy_deps.sh`, que verifica os hashes declarados. A resolução direta pelo próprio build não foi exercitada; ver a fatia mais recente abaixo.
+- `zig build test` na raiz passou nativamente (**50/50** em Debug e ReleaseSafe) quando os pacotes foram preparados por `tools/prepare_legacy_deps.sh`, que verifica os hashes declarados. A resolução direta pelo próprio build não foi exercitada; ver a fatia mais recente abaixo.
+- Os **33** casos de integração Editor/Runtime agora também existem em Zig (`tools/zig/test_bootstrap_cli.zig`), com sondas nativas em vez de shebang Python. A referência Python continua em CI até a validação remota do port.
 
 ## Registro cronológico
+
+## Continuação — PoolAllocator e PoolRegistry com reuso real (2026-11-03)
+
+- `src/memory/allocator.zig` deixou de ter um descritor de pool sem semântica: `PoolAllocator.init(allocator, block_size, block_count, block_align)` reserva o buffer com folga de alinhamento, entrega blocos de tamanho fixo por uma pilha de reuso LIFO, conta bytes no `MemoryTracker`, suporta `reset` e `deinit` e recusa geometria nula ou que não cabe em `usize` antes de qualquer reserva. `block_align == 0` continua sendo tratado como 1, igual aos outros allocators do arquivo.
+- Contrato de liberação: comprimento diferente de `block_size`, ponteiro fora do backing, deslocamento que não é múltiplo do stride e liberação dupla devolvem `error.InvalidFree` sem alterar a capacidade. O pool nunca cresce sozinho; esgotar a capacidade é `error.OutOfMemory`.
+- `PoolRegistry` mantém um pool por geometria (`block_size`, `block_align`), reutiliza o existente em `getOrCreate`, encaminha `free` ao pool dono e expõe `totals`. Cada pool é alocado individualmente para que os ponteiros devolvidos permaneçam estáveis quando o registro cresce.
+- **11 testes novos** substituem o antigo teste de descritor: blocos distintos e alinhados, reuso LIFO com contagem de tracker, recusa de liberação dupla/alheia/truncada/deslocada sem corromper a pilha, esgotamento e `reset`, stride com padding sem sobreposição (sentinela na folga), geometria nula e com overflow, injeção de falha de alocação em todas as reservas do pool (`checkAllAllocationFailures`), reuso por geometria no registry, roteamento de `free` com reuso do mesmo endereço, recusa de bloco não pertencente com `totals`, e `deinit` sem vazamento.
+- Evidências nativas desta fatia: `zig test src/memory/allocator.zig` **19/19**; raiz `zig build test` **50/50** em Debug e ReleaseSafe (**46** no core legado e **4** nos adaptadores Zigway), executado com `--search-prefix` para um symlink local de `libX11.so` em `.cache/syslibs` (diretório ignorado pelo Git, porque `libx11-dev` não está instalado no host).
+- Limites: o pool e o registry continuam sem consumidor no Editor, Runtime ou executável legado — não há scheduler de sistemas nem pools por frame conectados. Nada aqui comprova desempenho de frame ou integração com renderização. **Não houve execução de CI remota nesta fatia.**
+
+## Continuação — port Zig dos testes de integração Editor/Runtime (2026-11-03)
+
+- `tools/zig/test_bootstrap_cli.zig` porta os **33** casos de `tools/test_bootstrap.py` para Zig, com processos reais, JSONL nos dois pipes, verificação de sessão/sequência/timestamp/stream, deadlines, limites de captura e cleanup. `tools/zig/bootstrap_probe.zig` substitui as sondas Python com shebang: o Editor só aceita executável absoluto explícito e não repassa argumentos extras, então o modo vem de `<projeto>.probe` e o PID de `<projeto>.pid` para provar encerramento e coleta do filho.
+- `zig build test-bootstrap-cli` roda esses testes (POSIX nativo), exige os dois bootstraps já compilados e não os reconstrói; `-Deditor-bin`/`-Druntime-bin`/`-Drepository-root` permitem outros binários e outra árvore. `zig build check` continua apenas compilando para alvos cruzados.
+- Evidências: **33/33** em Debug e **33/33** em ReleaseSafe; `tools/test_bootstrap.py` permaneceu **33/33**; `zig build check -Dtarget=x86_64-windows-gnu` 21/21 (cross, sem execução); `tools/zig test` e `zig build validate` passaram.
+- Limites: o port é POSIX e não foi executado nativamente em Windows. O caso de orçamento de diagnóstico espera ~2,4 MiB de saída do Editor e usa um coletor próprio mais largo que o limite de 256 KiB por pipe do supervisor de produto. O caso de pipe fechado abre o Runtime diretamente. A referência Python permanece em CI até a validação remota do port.
+
 
 ## Continuação — recuperação dos módulos legados e build raiz executável (2026-11-02)
 

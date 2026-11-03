@@ -30,7 +30,7 @@ zig build validate -j2 --summary all
 git diff --check
 ```
 
-The current repository has three legacy Zig files that are not parseable by Zig 0.17.0: `src/ecs/system.zig`, `src/memory/allocator.zig`, and `src/scripting/lua_allocator.zig`. Consequently, the global formatter command currently fails on those files. Do not hide that failure by omitting files from validation; report a scoped formatter check separately and preserve the blocker until the legacy contracts are reviewed.
+The three recovered legacy Zig files — `src/ecs/system.zig`, `src/memory/allocator.zig`, and `src/scripting/lua_allocator.zig` — now parse and format under Zig 0.17.0 and are part of the explicit `zig fmt --check` list in the `validate` step. If a formatter failure appears, do not hide it by omitting files from validation; report the failing path and fix it, or keep the failure visible until the contract is reviewed.
 
 The root build fetches pinned Zigway and ZyntraUI packages. If resolution fails, report the resolver error and stop rather than changing system DNS configuration, dependency pins, or retrying downloads indefinitely. Do not treat an unrun check as a pass.
 

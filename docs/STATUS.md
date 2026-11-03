@@ -4,7 +4,7 @@
 
 ## Implementado e verificável
 
-- A árvore legada CoreXEngine mantém uma configuração de build/testes nativos Linux para Zig 0.17.0 e declara pins de Zigway e ZyntraUI. Com os pacotes preparados e verificados por `tools/prepare_legacy_deps.sh`, o build raiz e seus testes executam nativamente (40/40 em Debug e ReleaseSafe: 36 do core legado e 4 dos adaptadores Zigway).
+- A árvore legada CoreXEngine mantém uma configuração de build/testes nativos Linux para Zig 0.17.0 e declara pins de Zigway e ZyntraUI. Com os pacotes preparados e verificados por `tools/prepare_legacy_deps.sh`, o build raiz e seus testes executam nativamente (50/50 em Debug e ReleaseSafe: 46 do core legado e 4 dos adaptadores Zigway).
 - Os módulos Shared, Editor e Runtime têm builds e testes próprios. Editor e Runtime oferecem contratos headless e ferramentas de linha de comando; isso não os torna aplicações gráficas.
 - Os contratos de projeto, presets, compatibilidade de versão e bootstraps possuem schemas, validadores e testes. O `VERSION` na raiz é a fonte da identidade de versão da Engine.
 - O adaptador CoreX↔Zigway encaminha opções, capacidades, eventos, entrada e criação/liberação de janelas lógicas. Testes headless verificam o contrato do adaptador, não sessões de janela nativa.
@@ -19,7 +19,7 @@
 ## Limites de validação
 
 - `zig fmt --check` passa em todos os caminhos Zig rastreados, inclusive `src/ecs/system.zig`, `src/memory/allocator.zig` e `src/scripting/lua_allocator.zig`, e esses três caminhos são verificados pelo passo `validate`. A única exceção é o cache de dependências gerado em `zig-pkg/`, que não é rastreado nem distribuído e por isso não entra no portão.
-- Os três módulos legados recuperados não são usados pelo Editor, pelo Runtime nem pelo executável legado: foram atualizados para compilar, mas não existe scheduler de sistemas, registry de pools nem VM Lua conectada. Aprovar seus testes não os promove a funcionalidade de produto.
+- Os três módulos legados recuperados não são usados pelo Editor, pelo Runtime nem pelo executável legado. `PoolAllocator`/`PoolRegistry` já reservam, entregam, reutilizam e liberam blocos reais, com detecção de liberação inválida, mas continuam sem consumidor no produto; não há scheduler de sistemas nem VM Lua conectada. Aprovar seus testes não os promove a funcionalidade de produto.
 - `zig build test` na raiz exige as dependências legadas preparadas e, em Linux, as bibliotecas de desenvolvimento X11 (`libx11-dev`) já declaradas no README. Nesta sessão a resolução direta de Zigway/ZyntraUI pelo build não foi exercitada: os pacotes vieram do cache verificado por hash produzido pelo preparador do próprio repositório.
 - Testes do backend null são testes headless e não demonstram funcionamento de backend nativo.
 - Cross-compilar para Windows não equivale a executar em Windows. Execução nativa deve ser indicada separadamente.
