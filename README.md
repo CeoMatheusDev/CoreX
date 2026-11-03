@@ -1,5 +1,14 @@
 # CoreX Engine
 
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
+
+CoreX is an engine project in active development. The current repository provides independent Editor and Runtime validation bootstraps, shared project contracts, native validation tooling, and a separate legacy engine demonstration.
+
+> [!NOTE]
+> Current product boundary: project validation is implemented; a graphical Editor, playable Runtime, and GPU presentation are not yet available.
+
+---
+
 > **Product scope:** Windows and Linux; a 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. A platform being eligible does not mean its renderer is implemented. See [ADR-003](docs/ADR-003-desktop-3d-canvas.md).
 
 CoreX is a Zig 0.17.0 game-engine project in active development. The repository currently contains independent Editor and Runtime validation bootstraps, shared project contracts, and a separate legacy engine demonstration.
