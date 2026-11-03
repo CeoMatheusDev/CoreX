@@ -25,6 +25,9 @@ pub const Runner = struct {
 
 pub const RunRequest = struct {
     frames: u32,
+    /// Optional content-scene path (borrowed from CLI args). When null the
+    /// runner uses its embedded smoke scene.
+    scene_path: ?[]const u8 = null,
 };
 
 pub const RunReport = struct {
@@ -191,9 +194,9 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
         // Execution here is deterministic and headless: no window, no GPU, no
         // content game scene and no presented frame. The declared smoke scene
         // and its counters come from the runner.
-        try logger.emit(.info, "runtime.run_starting", "Execucao headless deterministica iniciada; cena de fumaca embutida, sem janela, GPU, cena de jogo ou entrada real", .{
+        try logger.emit(.info, "runtime.run_starting", "Execucao headless deterministica iniciada; sem janela, GPU, cena de jogo ou entrada real", .{
             .frames_requested = frames,
-            .scene = "smoke",
+            .scene = if (options.scene != null) "content" else "smoke",
             .tick_hz = @as(u32, 60),
             .frame_ns = @as(u64, 16_666_667),
             .headless = true,
@@ -202,7 +205,7 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
             .window_created = false,
             .input_staged = false,
         });
-        const report = execution.run(execution.context, .{ .frames = frames }) catch |err| {
+        const report = execution.run(execution.context, .{ .frames = frames, .scene_path = options.scene }) catch |err| {
             try logger.emit(.@"error", "runtime.run_failed", "Executor headless retornou erro; nenhum frame foi apresentado", .{ .code = @errorName(err), .core_linked = true, .gpu_created = false });
             return .internal;
         };
@@ -214,7 +217,7 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
             .phase_remainder = report.phase_remainder,
             .entities_alive = report.entities_alive,
             .state_checksum = report.state_checksum,
-            .scene = "smoke",
+            .scene = if (options.scene != null) "content" else "smoke",
             .presented_frames = @as(u32, 0),
             .play_started = false,
             .core_linked = true,

@@ -30,6 +30,12 @@ pub const max_steps_per_frame: u32 = 8;
 
 pub const Request = struct {
     frames: u32,
+    /// Optional content-scene file path. When set, the scene is loaded from
+    /// this file instead of the embedded smoke scene.
+    scene_path: ?[]const u8 = null,
+    /// I/O interface for file reads (scene loading). Required when scene_path
+    /// is set.
+    io: ?std.Io = null,
 };
 
 pub const Report = struct {
@@ -157,7 +163,17 @@ pub fn run(allocator: std.mem.Allocator, request: Request) anyerror!Report {
     defer registry.stop() catch {};
 
     // Explicit builder: the scene is running, but its World belongs to it.
-    try headless_app.populate(&smoke);
+    if (request.scene_path) |scene_path| {
+        // Load content scene from file instead of the embedded smoke scene.
+        const io = request.io orelse return error.MissingIo;
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(io, scene_path, allocator, .limited(4 * 1024 * 1024));
+        defer allocator.free(bytes);
+        var file = try scene.content_format.parse(allocator, bytes);
+        defer scene.content_format.deinit(allocator, &file);
+        try scene.content_loader.load(headless_app.Stores, smoke.world(), &file);
+    } else {
+        try headless_app.populate(&smoke);
+    }
 
     var steps: u64 = 0;
     var frames: u32 = 0;
@@ -224,6 +240,33 @@ test "smoke scene state is deterministic and changes with the tick count" {
 test "unsupported frame counts are rejected before any work" {
     try testing.expectError(error.InvalidFrameCount, run(testing.allocator, .{ .frames = 0 }));
     try testing.expectError(error.InvalidFrameCount, run(testing.allocator, .{ .frames = max_frames + 1 }));
+}
+
+test "content scene loads from file and runs deterministically" {
+    // Write a temporary scene file.
+    const test_io = testing.io;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const scene_json = "{\"entity_capacity\": 8, \"entities\": [{\"name\": \"c0\", \"components\": [{\"kind\": \"position\", \"x\": 1, \"y\": 2}, {\"kind\": \"velocity\", \"x\": 1, \"y\": 1}, {\"kind\": \"age\", \"ticks\": 0}]}, {\"name\": \"c1\", \"components\": [{\"kind\": \"position\", \"x\": 5, \"y\": 6}, {\"kind\": \"velocity\", \"x\": -1, \"y\": 1}, {\"kind\": \"age\", \"ticks\": 0}]}]}";
+    try tmp.dir.writeFile(test_io, .{ .sub_path = "test.scene", .data = scene_json });
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(test_io, &buf);
+    const path = try std.fs.path.join(testing.allocator, &.{ buf[0..n], "test.scene" });
+    defer testing.allocator.free(path);
+
+    const first = try run(testing.allocator, .{ .frames = 10, .scene_path = path, .io = test_io });
+    const second = try run(testing.allocator, .{ .frames = 10, .scene_path = path, .io = test_io });
+    try testing.expectEqual(@as(u32, 2), first.entities_alive);
+    try testing.expectEqualDeep(first, second);
+    try testing.expect(first.state_checksum != 0);
+
+    // A different frame count produces a different checksum.
+    const third = try run(testing.allocator, .{ .frames = 11, .scene_path = path, .io = test_io });
+    try testing.expect(third.state_checksum != first.state_checksum);
+}
+
+test "missing scene file fails cleanly" {
+    try testing.expectError(error.FileNotFound, run(testing.allocator, .{ .frames = 1, .scene_path = "/nonexistent/scene.json", .io = testing.io }));
 }
 
 test "the step budget caps catch-up without discarding the backlog" {

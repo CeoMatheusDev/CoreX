@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Connected the content-scene loader to the Runtime headless executor: new `--scene <file>` CLI flag (Runtime-only, requires `--headless --frames N`), `RunRequest.scene_path`, and `run_mode.Request.io`. When set, the scene is parsed via `scene.content_format` and loaded via `scene.content_loader` instead of the embedded smoke scene; logs report `scene="content"`. Verified end-to-end: 2-entity scene file → `entities_alive=2`.
 - Added a real content-scene file format and loader to `corex_scene`: `scene/content_format.zig` (strict JSON parser with caller-owned memory, rejects unknown fields/floats/zero capacity) and `scene/content_loader.zig` (generic loader that populates any `World(Stores)` from a parsed descriptor, matching component kinds to store fields by name). 57/57 Scene tests pass.
 - Adopted `corex_core` in the Editor: added `editor/src/editor_session.zig` with a concrete `editor.session` subsystem (document load → scope policy → distribution verification → ready) registered into a `core.subsystem.Registry(4)`, plus `EditorLifecycle` in `editor_lifecycle.zig`. The Editor now consumes the shared Core lifecycle; 40/40 Editor tests pass.
 - Added the root `VERSION` authority, strict native Zig parsing/comparison, validated release transitions, and the `corex-version` CLI with dry-run support.

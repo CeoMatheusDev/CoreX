@@ -10,6 +10,9 @@ pub const Options = struct {
     check_runtime: ?[]const u8 = null,
     /// Opt-in headless execution. No other value means "execute".
     frames: ?u32 = null,
+    /// Optional content-scene file for headless execution (Runtime only).
+    /// When absent, the embedded smoke scene is used.
+    scene: ?[]const u8 = null,
 };
 pub const Error = error{ TooManyArguments, UnknownArgument, DuplicateArgument, MissingValue, MissingProject, InvalidPathArgument, InvalidCombination, InvalidValue };
 
@@ -32,14 +35,15 @@ pub fn parse(kind: Kind, args: []const []const u8) Error!Options {
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "--project") or std.mem.eql(u8, arg, "--check-runtime")) {
-            const project = std.mem.eql(u8, arg, "--project");
-            if ((!project and o.check_runtime != null) or (project and o.project != null)) return error.DuplicateArgument;
+        if (std.mem.eql(u8, arg, "--project") or std.mem.eql(u8, arg, "--check-runtime") or std.mem.eql(u8, arg, "--scene")) {
+            const is_project = std.mem.eql(u8, arg, "--project");
+            const is_check = std.mem.eql(u8, arg, "--check-runtime");
+            if ((is_check and o.check_runtime != null) or (is_project and o.project != null) or (!is_project and !is_check and o.scene != null)) return error.DuplicateArgument;
             i += 1;
             if (i == args.len or std.mem.startsWith(u8, args[i], "--")) return error.MissingValue;
             const path = args[i];
             try validatePath(path);
-            if (project) o.project = path else o.check_runtime = path;
+            if (is_project) o.project = path else if (is_check) o.check_runtime = path else o.scene = path;
         } else if (kind == .editor and !std.mem.startsWith(u8, arg, "-") and std.ascii.endsWithIgnoreCase(arg, ".proj")) {
             if (o.project != null) return error.DuplicateArgument;
             try validatePath(arg);
@@ -76,6 +80,8 @@ pub fn parse(kind: Kind, args: []const []const u8) Error!Options {
         // validation-only pass: an execution request always means Run.
         if (kind != .runtime or !o.headless or o.validate_only) return error.InvalidCombination;
     }
+    // A content scene file is only meaningful for headless execution.
+    if (o.scene != null and (kind != .runtime or o.frames == null)) return error.InvalidCombination;
     return o;
 }
 
@@ -139,4 +145,17 @@ test "frames is an explicit runtime-only headless execution request" {
     try std.testing.expectError(error.MissingValue, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames" }));
     try std.testing.expectError(error.DuplicateArgument, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "1", "--frames", "2" }));
     try std.testing.expectEqual(@as(?u32, max_frames), (try parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "1000000" })).frames);
+}
+
+test "scene is a runtime-only headless execution option" {
+    const o = try parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "120", "--scene", "scenes/Main.scene" });
+    try std.testing.expectEqualStrings("scenes/Main.scene", o.scene.?);
+    // Scene without frames is not an execution request.
+    try std.testing.expectError(error.InvalidCombination, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--scene", "s.scene" }));
+    // Scene on the Editor is rejected.
+    try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--project", "Game.proj", "--headless", "--frames", "1", "--scene", "s.scene" }));
+    // Duplicate scene is rejected.
+    try std.testing.expectError(error.DuplicateArgument, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "1", "--scene", "a", "--scene", "b" }));
+    // Missing value is rejected.
+    try std.testing.expectError(error.MissingValue, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "1", "--scene" }));
 }
