@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Added `scene/ecs/hierarchy.zig`: parent/child entity hierarchy as regular `SparseSet` components (`Parent`, `Children`) with cycle-safe reparenting, root detection, and `onDestroy` child reparenting to the grandparent. Any `World(Stores)` declaring these components gets hierarchy. Scene tests: 65/65.
 - Added `scene/content_serializer.zig`: deterministic JSON serializer that writes any `World(StoresT)` back to the content-scene format (entities in index order, components in store declaration order). Round-trips with `content_loader` (load → serialize → load preserves state). Replaced the `Scene.saveDescriptor` stub with the real implementation. Scene tests: 60/60.
 - Connected the content-scene loader to the Runtime headless executor: new `--scene <file>` CLI flag (Runtime-only, requires `--headless --frames N`), `RunRequest.scene_path`, and `run_mode.Request.io`. When set, the scene is parsed via `scene.content_format` and loaded via `scene.content_loader` instead of the embedded smoke scene; logs report `scene="content"`. Verified end-to-end: 2-entity scene file → `entities_alive=2`.
 - Added a real content-scene file format and loader to `corex_scene`: `scene/content_format.zig` (strict JSON parser with caller-owned memory, rejects unknown fields/floats/zero capacity) and `scene/content_loader.zig` (generic loader that populates any `World(Stores)` from a parsed descriptor, matching component kinds to store fields by name). 57/57 Scene tests pass.
