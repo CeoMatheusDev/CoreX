@@ -12,6 +12,7 @@ const format = @import("content_format.zig");
 const world_mod = @import("ecs/world.zig");
 const Entity = @import("ecs/entity.zig").Entity;
 const hierarchy = @import("ecs/hierarchy.zig");
+const transform3d = @import("ecs/transform3d.zig");
 
 pub const LoadError = error{
     UnknownComponentKind,
@@ -138,6 +139,14 @@ fn loadComponent(comptime StoresT: type, world: *world_mod.World(StoresT), entit
             if (comptime Component == hierarchy.Parent or Component == hierarchy.Children) {
                 // These are derived solely from parent_index, never raw handles.
                 return error.InvalidHierarchyComponent;
+            } else if (comptime Component == transform3d.LocalTransform3D) {
+                if (world.has(Component, entity)) return error.DuplicateEntityComponent;
+                // Q16.16 matrix entries are flat integer fields in the existing
+                // scalar descriptor. Missing fields keep the identity defaults.
+                var value: Component = .{};
+                for (comp.fields) |*field| try setField(transform3d.Mat4, &value.matrix, field);
+                try world.add(Component, entity, value);
+                return;
             } else if (comptime !format.supportsComponent(Component)) {
                 return error.UnsupportedComponentType;
             } else {
@@ -485,4 +494,79 @@ test "non-scalar component fields fail cleanly rather than failing compilation" 
     defer world.deinit();
     try testing.expectError(error.UnsupportedComponentType, load(NestedStores, &world, &file));
     try testing.expectEqual(@as(u32, 0), world.aliveCount());
+}
+
+const TransformCodecStores = struct {
+    parent: sparse_set.SparseSet(hierarchy.Parent),
+    children: sparse_set.SparseSet(hierarchy.Children),
+    local_transform3d: sparse_set.SparseSet(transform3d.LocalTransform3D),
+    world_transform3d: sparse_set.SparseSet(transform3d.WorldTransform3D),
+};
+const TransformCodecWorld = world_mod.World(TransformCodecStores);
+
+test "3D local codec decodes flat Q16 fields with identity defaults" {
+    var file = try format.parse(testing.allocator,
+        \\{"entities":[{"parent_index":1,"components":[{"kind":"local_transform3d","m03":-65536,"m12":-1}]},{"components":[{"kind":"local_transform3d","m00":2147483647,"m23":-2147483648}]}]}
+    );
+    defer format.deinit(testing.allocator, &file);
+    var world = try TransformCodecWorld.init(testing.allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TransformCodecWorld, testing.allocator, &world);
+    try load(TransformCodecStores, &world, &file);
+    const child = world.entityAt(0).?;
+    const root = world.entityAt(1).?;
+    try testing.expectEqual(root, hierarchy.getParent(TransformCodecWorld, &world, child).?);
+    const matrix = world.getConst(transform3d.LocalTransform3D, child).?.matrix;
+    try testing.expectEqual(transform3d.fixed_one, matrix.m00);
+    try testing.expectEqual(transform3d.fixed_one, matrix.m11);
+    try testing.expectEqual(transform3d.fixed_one, matrix.m22);
+    try testing.expectEqual(@as(i32, -65536), matrix.m03);
+    try testing.expectEqual(@as(i32, -1), matrix.m12);
+    try testing.expectEqual(@as(i32, 0), matrix.m23);
+    const root_matrix = world.getConst(transform3d.LocalTransform3D, root).?.matrix;
+    try testing.expectEqual(std.math.maxInt(i32), root_matrix.m00);
+    try testing.expectEqual(std.math.minInt(i32), root_matrix.m23);
+    try testing.expect(!format.supportsComponent(transform3d.LocalTransform3D)); // codec is explicit, not generic
+}
+
+test "3D codec rejects bad fields and rolls back created entities" {
+    const cases = [_]struct { json: []const u8, expected: anyerror }{
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m00\":2147483648}]}]}", .expected = error.TypeMismatch },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m00\":-2147483649}]}]}", .expected = error.TypeMismatch },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m00\":true}]}]}", .expected = error.TypeMismatch },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m33\":0}]}]}", .expected = error.UnknownFieldName },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\"},{\"kind\":\"local_transform3d\"}]}]}", .expected = error.DuplicateEntityComponent },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"world_transform3d\",\"m03\":1}]}]}", .expected = error.UnsupportedComponentType },
+    };
+    for (cases) |case| {
+        var file = try format.parse(testing.allocator, case.json);
+        defer format.deinit(testing.allocator, &file);
+        var world = try TransformCodecWorld.init(testing.allocator, 4);
+        defer world.deinit();
+        defer hierarchy.clear(TransformCodecWorld, testing.allocator, &world);
+        const existing = try world.create();
+        try world.add(transform3d.LocalTransform3D, existing, .{ .matrix = .translation(7, 0, 0) });
+        try testing.expectError(case.expected, load(TransformCodecStores, &world, &file));
+        try testing.expectEqual(@as(u32, 1), world.aliveCount());
+        try testing.expectEqual(@as(i32, 7), world.getConst(transform3d.LocalTransform3D, existing).?.matrix.m03);
+    }
+    try testing.expectError(error.InvalidSceneData, format.parse(testing.allocator, "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m00\":1.5}]}]}"));
+    try testing.expectError(error.InvalidSceneData, format.parse(testing.allocator, "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"matrix\":{\"m00\":1}}]}]}"));
+    try testing.expectError(error.ParseError, format.parse(testing.allocator, "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m00\":1,\"m00\":2}]}]}"));
+}
+
+test "3D content loading is clean on every allocation failure" {
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator) !void {
+            var file = try format.parse(allocator,
+                \\{"entities":[{"parent_index":2,"components":[{"kind":"local_transform3d","m03":65536}]},{"parent_index":2},{"components":[{"kind":"local_transform3d","m00":-65536}]}]}
+            );
+            defer format.deinit(allocator, &file);
+            var world = try TransformCodecWorld.init(allocator, 4);
+            defer world.deinit();
+            defer hierarchy.clear(TransformCodecWorld, allocator, &world);
+            try load(TransformCodecStores, &world, &file);
+            try testing.expectEqual(@as(u32, 3), world.aliveCount());
+        }
+    }.probe, .{});
 }

@@ -173,10 +173,12 @@ pub fn run(allocator: std.mem.Allocator, request: Request) anyerror!Report {
         defer allocator.free(bytes);
         var file = try scene.content_format.parse(allocator, bytes);
         defer scene.content_format.deinit(allocator, &file);
+        try headless_app.validateContent(&file);
         try scene.content_loader.load(headless_app.Stores, smoke.world(), &file);
     } else {
         try headless_app.populate(&smoke);
     }
+    try headless_app.prepareTransforms(&smoke);
 
     var steps: u64 = 0;
     var frames: u32 = 0;
@@ -389,6 +391,10 @@ test "headless content hierarchy is deterministic and affects the state checksum
     const repeat = try run(testing.allocator, request);
     try testing.expectEqual(@as(u32, 4), first.entities_alive);
     try testing.expectEqualDeep(first, repeat);
+    // The optional 3D extension must not change the hierarchy-only checksum.
+    if (@import("builtin").cpu.arch.endian() == .little) {
+        try testing.expectEqual(@as(u64, 15074767884967710343), first.state_checksum);
+    }
     try fixture.write(reversed_json);
     const reordered = try run(testing.allocator, request);
     try testing.expect(first.state_checksum != reordered.state_checksum);
@@ -473,4 +479,93 @@ test "headless hierarchy handles a deep forward-referenced scene" {
     try testing.expectEqual(@as(u32, count), report.entities_alive);
     try testing.expectEqual(@as(u64, 2), report.ticks);
     try testing.expect(report.state_checksum != 0);
+}
+
+test "headless content 3D transforms are deterministic and affect final state" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    const content =
+        \\{"entities":[{"parent_index":1,"components":[{"kind":"local_transform3d","m03":131072}]},{"parent_index":3},{"components":[{"kind":"position","x":4}]},{"components":[{"kind":"local_transform3d","m00":0,"m01":-65536,"m10":65536,"m11":0,"m03":65536}]}]}
+    ;
+    const changed =
+        \\{"entities":[{"parent_index":1,"components":[{"kind":"local_transform3d","m03":131073}]},{"parent_index":3},{"components":[{"kind":"position","x":4}]},{"components":[{"kind":"local_transform3d","m00":0,"m01":-65536,"m10":65536,"m11":0,"m03":65536}]}]}
+    ;
+    const request: Request = .{ .frames = 60, .scene_path = fixture.path, .io = testing.io };
+    try fixture.write(content);
+    const first = try run(testing.allocator, request);
+    const repeat = try run(testing.allocator, request);
+    try testing.expectEqual(@as(u32, 4), first.entities_alive);
+    try testing.expectEqualDeep(first, repeat);
+    // Verified against an independent byte-level FNV reference calculation.
+    if (@import("builtin").cpu.arch.endian() == .little) {
+        try testing.expectEqual(@as(u64, 2429354715879297609), first.state_checksum);
+    }
+    try fixture.write(changed);
+    const different = try run(testing.allocator, request);
+    try testing.expect(first.state_checksum != different.state_checksum);
+}
+
+test "headless 3D content rejects raw derived state invalid input and overflow" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    const cases = [_]struct { json: []const u8, expected: anyerror }{
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"world_transform3d\",\"m03\":9}]}]}", .expected = error.InvalidTransformComponent },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_dirty\",\"subtree_dirty\":true}]}]}", .expected = error.InvalidTransformComponent },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m00\":2147483648}]}]}", .expected = error.TypeMismatch },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m33\":1}]}]}", .expected = error.UnknownFieldName },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":2147483647}]},{\"parent_index\":0,\"components\":[{\"kind\":\"local_transform3d\",\"m03\":1}]}]}", .expected = error.TransformOverflow },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m00\":2147483647}]},{\"parent_index\":0,\"components\":[{\"kind\":\"local_transform3d\",\"m00\":2147483647}]}]}", .expected = error.TransformOverflow },
+    };
+    for (cases) |case| {
+        try fixture.write(case.json);
+        try testing.expectError(case.expected, run(testing.allocator, .{ .frames = 1, .scene_path = fixture.path, .io = testing.io }));
+    }
+}
+
+test "headless 3D preparation cleans up for every allocation failure" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    // A wide forest triggers capacity growth in entity, dirty and computed
+    // stores, plus the hierarchy loader and initial propagation stack.
+    var json: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer json.deinit();
+    try json.writer.writeAll("{\"entities\":[");
+    for (0..24) |index| {
+        if (index != 0) try json.writer.writeByte(',');
+        if (index == 23) {
+            try json.writer.writeAll("{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":65536}]}");
+        } else {
+            try json.writer.writeAll("{\"parent_index\":23}");
+        }
+    }
+    try json.writer.writeAll("]}");
+    try fixture.write(json.written());
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator, path: []const u8) !void {
+            const report = try run(allocator, .{ .frames = 2, .scene_path = path, .io = testing.io });
+            try testing.expectEqual(@as(u32, 24), report.entities_alive);
+        }
+    }.probe, .{fixture.path});
+}
+
+test "headless 3D preparation handles a deep forward hierarchy" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    var json: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer json.deinit();
+    const count = 5000;
+    try json.writer.writeAll("{\"entities\":[");
+    for (0..count) |index| {
+        if (index != 0) try json.writer.writeByte(',');
+        if (index + 1 == count) {
+            try json.writer.writeAll("{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":65536}]}");
+        } else {
+            try json.writer.print("{{\"parent_index\":{d}}}", .{index + 1});
+        }
+    }
+    try json.writer.writeAll("]}");
+    try fixture.write(json.written());
+    const report = try run(testing.allocator, .{ .frames = 2, .scene_path = fixture.path, .io = testing.io });
+    try testing.expectEqual(@as(u32, count), report.entities_alive);
+    try testing.expectEqual(@as(u64, 2), report.ticks);
 }

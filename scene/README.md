@@ -39,7 +39,7 @@ Biblioteca Zig pura de entidades, componentes, systems e cena determinística. A
 - `parent_index` é a posição **zero-based no array `entities`**, não um slot ou handle do World; pais podem aparecer depois dos filhos. Ausente ou `null` significa raiz. Slots destruídos e gerações são remapeados ao salvar/carregar.
 - `sibling_index` preserva a ordem exposta por `getChildren`. Para cada pai, informe todos os índices como uma permutação de `0..N-1` ou omita todos para usar a ordem do arquivo. Raízes não podem ter `sibling_index`. Índices inválidos, ciclos, duplicatas e hierarquia sem os dois stores são erros explícitos.
 - `Parent`/`Children` são reconstruídos, nunca gravados como handles brutos. A exportação verifica reciprocidade, gerações e ciclos. O carregamento usa listas dimensionadas em lote e é linear no número de entidades/vínculos; a exportação varre até `highWater` e os vínculos. Não há recursão proporcional à profundidade.
-- Componentes persistíveis têm campos inteiros de até 64 bits, `bool` ou `[]const u8` UTF-8. Structs aninhados, incluindo matrizes de transform, não são serializados; a operação retorna `UnsupportedComponentType`. `name` é lido no descritor, mas não é armazenado no World nem preservado pelo serializer.
+- Componentes genéricos persistíveis têm campos inteiros de até 64 bits, `bool` ou `[]const u8` UTF-8. Há um codec explícito adicional para `LocalTransform3D`, descrito abaixo; outros structs aninhados continuam retornando `UnsupportedComponentType`. `content_format.supportsComponent` consulta apenas o suporte escalar genérico, não os codecs específicos. `name` é lido no descritor, mas não é armazenado no World nem preservado pelo serializer.
 - Textos dos componentes carregados **emprestam** memória do `SceneFile`: mantenha-o vivo até deixar de usar esses componentes. Use `content_format.deinit` uma vez após o World. Strings do JSON retornado pelo serializer pertencem ao chamador.
 - Em erro, `load` remove as entidades e listas criadas pela chamada e preserva entidades preexistentes. A capacidade, os contadores de geração e a ordem da free-list podem mudar; não é rollback binário completo do World.
 
@@ -56,13 +56,30 @@ const json = try corex_scene.content_serializer.serialize(Stores, allocator, &wo
 defer allocator.free(json);
 ```
 
-`Scene.loadWorld` e `scene.loader.Loader.loadWorld` são APIs legadas ainda não ligadas a esse caminho de conteúdo; não as use como carregadores de conteúdo. O Runtime headless usa `content_loader` em modo somente leitura, com componentes escalares `position`, `velocity`, `age` e hierarquia opcional. Os vínculos são preservados e entram no checksum, mas não há carregamento ou propagação de transforms 3D; os systems não herdam posições dos pais.
+`Scene.loadWorld` e `scene.loader.Loader.loadWorld` são APIs legadas ainda não ligadas a esse caminho de conteúdo; não as use como carregadores de conteúdo. O Runtime headless usa `content_loader` em modo somente leitura, com `position`, `velocity`, `age`, hierarquia e `local_transform3d` opcionais. O `Position` dos systems de fumaça é independente dos transforms 3D.
+
+### Codec de transform 3D
+
+Declare `SparseSet(transform3d.LocalTransform3D)` no `Stores`; o `kind` do JSON é o nome desse campo (no Runtime, `local_transform3d`). O codec usa os doze campos escalares `m00`…`m03`, `m10`…`m13`, `m20`…`m23` em ordem de linhas; a última linha é implicitamente `0 0 0 1`. Cada campo é um inteiro **i32 Q16.16 bruto**: `65536` representa `1`, `-65536` representa `-1`. Valores omitidos partem da identidade (diagonal `65536`, demais `0`); floats, números fora de i32, campos desconhecidos e JSON aninhado são rejeitados.
+
+```json
+{"entities":[
+  {"components":[{"kind":"local_transform3d","m03":65536}]},
+  {"parent_index":0,"components":[{"kind":"local_transform3d","m13":131072}]}
+]}
+```
+
+A Scene serializa os doze campos do transform local em ordem determinística; o formato escalar e o `.proj` não mudaram. Leitores antigos que não conhecem esse tipo de componente não o carregarão. `WorldTransform3D` é calculado, não um componente de entrada do Runtime. `serializeAuthored(Stores, allocator, &world, system_capacity)` omite explicitamente **somente** `WorldTransform3D` e `TransformDirty`; o consumidor precisa recalculá-los. Outros tipos não suportados continuam causando erro. A API original `serialize` mantém seu comportamento: uma instância presente de `WorldTransform3D` é rejeitada como componente aninhado não suportado. O Runtime não grava cenas.
+
+A composição usa produtos Q16.16 arredondados individualmente para o inteiro mais próximo, empates afastados de zero, seguidos de somas da esquerda para a direita. `Mat4.tryMul` e `tryApplyPoint` retornam `TransformOverflow` se qualquer produto ou soma intermediária não couber em i32, mesmo que termos posteriores se cancelassem. `Mat4.mul`, `applyPoint` e `propagateTransforms3D` são APIs legadas sem essa checagem; a última também é best-effort quanto a alocação. Não use essas APIs legadas com valores não confiáveis.
 
 ## Transforms dirty
 
 `markDirty(World, &world, entity)` preserva o comportamento original: marca a entidade **e todos os ancestrais**, portanto a subárvore do ancestral mais alto será recalculada. `dirtyCount` inclui essas marcas. A API é `void` e best-effort: uma falha de alocação pode deixar marcas parciais sem aviso. `tryMarkDirtyWithAncestors` oferece a mesma marcação com erro explícito; após erro, corrija a causa e repita a marcação antes de propagar, pois marcas anteriores são mantidas.
 
-Para limitar o trabalho à subárvore alterada, `tryMarkDirty` marca apenas a entidade; seus ancestrais devem ter transforms mundiais válidos. Marcar uma folha assim não recalcula irmãos. `tryPropagateDirty` recalcula em ordem pai→filho mesmo se os índices estiverem invertidos. Em caso de erro ele preserva uma marca para nova tentativa, mas transforms já calculados são provisórios até o sucesso. `propagateDirty` continua `void` e best-effort, sem informar falhas; prefira a versão `try` quando for necessário confirmá-las. Ciclos e handles obsoletos não provocam laços infinitos. Com zero marcas a propagação não aloca; com marcas, o trabalho inclui subárvores afetadas e percursos de ancestrais, sem promessa geral de O(dirty). O chamador deve marcar mudanças de transform **e reparenting**.
+Para limitar o trabalho à subárvore alterada, `tryMarkDirty` marca apenas a entidade; seus ancestrais devem ter transforms mundiais válidos. Marcar uma folha assim não recalcula irmãos. `tryPropagateDirty` recalcula em ordem pai→filho mesmo se os índices estiverem invertidos, e mantém o comportamento legado de ignorar nós sem transform local. A variante aditiva `tryPropagateDirtyWithImplicitIdentity` atravessa essas lacunas, copiando o world do pai; sem ancestral transformado ela remove um world obsoleto. Para subárvores, ancestrais externos já devem estar atualizados.
+
+Ambas as variantes `try` detectam `TransformOverflow`. Em caso de erro preservam uma marca para nova tentativa, mas transforms já calculados são provisórios até o sucesso. `propagateDirty` continua `void` e best-effort, sem informar falhas; prefira a versão `try` quando for necessário confirmá-las. Ciclos e handles obsoletos não provocam laços infinitos. Com zero marcas a propagação não aloca; com marcas, o trabalho inclui subárvores afetadas e percursos de ancestrais, sem promessa geral de O(dirty). O chamador deve marcar mudanças de transform **e reparenting**. O Runtime calcula a hierarquia 3D uma vez após carregar, antes dos ticks; esses transforms são estáticos neste modo.
 
 ## Uso
 

@@ -75,6 +75,19 @@ pub fn propagateDirty(comptime WorldT: type, world: *WorldT) void {
 /// transforms may already have been updated; treat them as provisional until
 /// the call succeeds. The hierarchy must have reciprocal, live parent links.
 pub fn tryPropagateDirty(comptime WorldT: type, world: *WorldT) !void {
+    return propagateImpl(WorldT, world, false);
+}
+
+/// Like `tryPropagateDirty`, but a node without a local transform passes its
+/// parent's world transform through unchanged. If no transformed ancestor is
+/// available, a stale computed transform on that node is removed. Ancestors
+/// outside a marked subtree must already be current. Both variants report
+/// `TransformOverflow` and keep a retryable root marker on failure.
+pub fn tryPropagateDirtyWithImplicitIdentity(comptime WorldT: type, world: *WorldT) !void {
+    return propagateImpl(WorldT, world, true);
+}
+
+fn propagateImpl(comptime WorldT: type, world: *WorldT, comptime implicit_identity: bool) !void {
     var stack: std.ArrayList(Entity) = .empty;
     defer stack.deinit(world.allocator);
 
@@ -94,7 +107,7 @@ pub fn tryPropagateDirty(comptime WorldT: type, world: *WorldT) !void {
 
         const include_subtree = world.getConst(TransformDirty, root).?.subtree_dirty;
         if (!include_subtree) {
-            try recompute(WorldT, world, root);
+            try recompute(WorldT, world, root, implicit_identity);
             _ = try world.remove(TransformDirty, root);
             continue;
         }
@@ -106,7 +119,7 @@ pub fn tryPropagateDirty(comptime WorldT: type, world: *WorldT) !void {
         while (stack.pop()) |entity| {
             if (!world.isAlive(entity) or visited >= alive) return error.InvalidHierarchy;
             visited += 1;
-            try recompute(WorldT, world, entity);
+            try recompute(WorldT, world, entity, implicit_identity);
             const children = hierarchy.getChildren(WorldT, world, entity);
             // A valid tree cannot visit or queue more nodes than the World has.
             // This bounds malformed duplicate/cyclic child lists without a scan
@@ -130,19 +143,35 @@ pub fn tryPropagateDirty(comptime WorldT: type, world: *WorldT) !void {
     }
 }
 
-fn recompute(comptime WorldT: type, world: *WorldT, entity: Entity) !void {
-    const local = world.getConst(t3d.LocalTransform3D, entity) orelse return;
-    const local_matrix = local.matrix;
+fn recompute(comptime WorldT: type, world: *WorldT, entity: Entity, comptime implicit_identity: bool) !void {
+    const local = world.getConst(t3d.LocalTransform3D, entity);
+    // Preserve the legacy behavior: nodes without a local transform were not
+    // touched, even if they had a pre-existing computed value.
+    if (comptime !implicit_identity) if (local == null) return;
+
     const parent = hierarchy.getParent(WorldT, world, entity);
-    const matrix: t3d.Mat4 = if (parent) |p| blk: {
+    const parent_matrix: ?t3d.Mat4 = if (parent) |p| blk: {
         if (!world.isAlive(p)) return error.InvalidHierarchy;
-        const parent_world = world.getConst(t3d.WorldTransform3D, p) orelse break :blk local_matrix;
-        break :blk parent_world.matrix.mul(local_matrix);
-    } else local_matrix;
-    if (world.get(t3d.WorldTransform3D, entity)) |computed| {
-        computed.matrix = matrix;
-    } else {
-        try world.add(t3d.WorldTransform3D, entity, .{ .matrix = matrix });
+        const computed = world.getConst(t3d.WorldTransform3D, p) orelse break :blk null;
+        break :blk computed.matrix;
+    } else null;
+
+    const matrix: ?t3d.Mat4 = if (local) |authored|
+        if (parent_matrix) |parent_world| try parent_world.tryMul(authored.matrix) else authored.matrix
+    else if (implicit_identity)
+        parent_matrix
+    else
+        null;
+
+    if (matrix) |value| {
+        if (world.get(t3d.WorldTransform3D, entity)) |computed| {
+            computed.matrix = value;
+        } else {
+            try world.add(t3d.WorldTransform3D, entity, .{ .matrix = value });
+        }
+    } else if (implicit_identity) {
+        // A detached, untransformed node must not retain a stale world matrix.
+        _ = try world.remove(t3d.WorldTransform3D, entity);
     }
 }
 
@@ -586,4 +615,138 @@ test "checked ancestor marking releases resources at every allocation failure" {
             try testing.expectEqual(@as(usize, 5), dirtyCount(TestWorld, &world));
         }
     }.probe, .{});
+}
+
+test "implicit identity carries transforms through untransformed ancestors" {
+    var world = try TestWorld.init(testing.allocator, 8);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    // Deliberately create the leaf before its ancestors.
+    const leaf = try world.create();
+    const middle = try world.create();
+    const root = try world.create();
+    const unrelated = try world.create();
+    try world.add(t3d.LocalTransform3D, leaf, .{ .matrix = .translation(2, 0, 0) });
+    try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(10, 0, 0) });
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, middle, leaf);
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, root, middle);
+    try tryMarkDirty(TestWorld, &world, root);
+    try tryMarkDirty(TestWorld, &world, unrelated);
+    try tryPropagateDirtyWithImplicitIdentity(TestWorld, &world);
+    try testing.expectEqual(@as(i32, 10), world.getConst(t3d.WorldTransform3D, middle).?.matrix.m03);
+    try testing.expectEqual(@as(i32, 12), world.getConst(t3d.WorldTransform3D, leaf).?.matrix.m03);
+    try testing.expect(!world.has(t3d.WorldTransform3D, unrelated));
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+
+    // Removing the authored root also clears stale pass-through values.
+    _ = try world.remove(t3d.LocalTransform3D, root);
+    try tryMarkDirty(TestWorld, &world, root);
+    try tryPropagateDirtyWithImplicitIdentity(TestWorld, &world);
+    try testing.expect(!world.has(t3d.WorldTransform3D, root));
+    try testing.expect(!world.has(t3d.WorldTransform3D, middle));
+    try testing.expectEqual(@as(i32, 2), world.getConst(t3d.WorldTransform3D, leaf).?.matrix.m03);
+}
+
+test "legacy dirty propagation continues to skip nodes without local transforms" {
+    var world = try TestWorld.init(testing.allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    const root = try world.create();
+    const middle = try world.create();
+    const leaf = try world.create();
+    try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(10, 0, 0) });
+    try world.add(t3d.LocalTransform3D, leaf, .{ .matrix = .translation(2, 0, 0) });
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, root, middle);
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, middle, leaf);
+    try tryMarkDirty(TestWorld, &world, root);
+    try tryPropagateDirty(TestWorld, &world);
+    try testing.expect(!world.has(t3d.WorldTransform3D, middle));
+    try testing.expectEqual(@as(i32, 2), world.getConst(t3d.WorldTransform3D, leaf).?.matrix.m03);
+}
+
+test "checked dirty propagation reports overflow and retains a retryable root" {
+    var world = try TestWorld.init(testing.allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    const root = try world.create();
+    const child = try world.create();
+    try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(std.math.maxInt(i32), 0, 0) });
+    try world.add(t3d.LocalTransform3D, child, .{ .matrix = .translation(1, 0, 0) });
+    try world.add(t3d.WorldTransform3D, child, .{ .matrix = .translation(77, 0, 0) });
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, root, child);
+    try tryMarkDirty(TestWorld, &world, root);
+    try testing.expectError(error.TransformOverflow, tryPropagateDirty(TestWorld, &world));
+    try testing.expect(world.has(TransformDirty, root));
+    try testing.expectEqual(@as(i32, 77), world.getConst(t3d.WorldTransform3D, child).?.matrix.m03);
+    world.get(t3d.LocalTransform3D, child).?.matrix.m03 = -1;
+    try tryPropagateDirty(TestWorld, &world);
+    try testing.expectEqual(std.math.maxInt(i32) - 1, world.getConst(t3d.WorldTransform3D, child).?.matrix.m03);
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+}
+
+test "implicit identity propagation releases allocations on every failure" {
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator) !void {
+            var world = try TestWorld.init(allocator, 8);
+            defer world.deinit();
+            defer hierarchy.clear(TestWorld, allocator, &world);
+            const root = try world.create();
+            const middle = try world.create();
+            const child = try world.create();
+            try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(10, 0, 0) });
+            try world.add(t3d.LocalTransform3D, child, .{ .matrix = .translation(5, 0, 0) });
+            try hierarchy.setParent(TestWorld, allocator, &world, root, middle);
+            try hierarchy.setParent(TestWorld, allocator, &world, middle, child);
+            try tryMarkDirty(TestWorld, &world, root);
+            tryPropagateDirtyWithImplicitIdentity(TestWorld, &world) catch |err| {
+                try testing.expect(world.has(TransformDirty, root));
+                return err;
+            };
+            try testing.expectEqual(@as(i32, 15), world.getConst(t3d.WorldTransform3D, child).?.matrix.m03);
+        }
+    }.probe, .{});
+}
+
+test "empty implicit identity propagation allocates nothing" {
+    var counter = @import("../testing_allocator.zig").CountingAllocator{ .backing = testing.allocator };
+    var world = try TestWorld.init(counter.allocator(), 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, counter.allocator(), &world);
+    counter.resetCounters();
+    try tryPropagateDirtyWithImplicitIdentity(TestWorld, &world);
+    try testing.expectEqual(@as(usize, 0), counter.allocations);
+}
+
+test "implicit identity respects single-node markers and clears stale worlds" {
+    var world = try TestWorld.init(testing.allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    const root = try world.create();
+    const child = try world.create();
+    try hierarchy.setParent(TestWorld, testing.allocator, &world, root, child);
+    try world.add(t3d.WorldTransform3D, root, .{ .matrix = .translation(10, 0, 0) });
+    try world.add(t3d.WorldTransform3D, child, .{ .matrix = .translation(20, 0, 0) });
+    try world.add(TransformDirty, root, .{ .subtree_dirty = false });
+    try tryPropagateDirtyWithImplicitIdentity(TestWorld, &world);
+    try testing.expect(!world.has(t3d.WorldTransform3D, root));
+    // A non-subtree marker leaves descendants untouched until they are marked.
+    try testing.expectEqual(@as(i32, 20), world.getConst(t3d.WorldTransform3D, child).?.matrix.m03);
+    try tryMarkDirty(TestWorld, &world, child);
+    try tryPropagateDirtyWithImplicitIdentity(TestWorld, &world);
+    try testing.expect(!world.has(t3d.WorldTransform3D, child));
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+}
+
+test "implicit identity propagation reports corrupted parent cycles and keeps markers" {
+    var world = try TestWorld.init(testing.allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    const a = try world.create();
+    const b = try world.create();
+    // Bypass setParent deliberately to simulate corrupt external state.
+    try world.add(hierarchy.Parent, a, .{ .entity = b });
+    try world.add(hierarchy.Parent, b, .{ .entity = a });
+    try tryMarkDirty(TestWorld, &world, a);
+    try testing.expectError(error.CycleDetected, tryPropagateDirtyWithImplicitIdentity(TestWorld, &world));
+    try testing.expect(world.has(TransformDirty, a));
 }

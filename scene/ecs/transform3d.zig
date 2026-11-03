@@ -65,33 +65,75 @@ pub const Mat4 = struct {
         return .{ .m00 = c, .m01 = -s, .m10 = s, .m11 = c };
     }
 
-    /// Compose: self * other.
-    pub fn mul(self: Mat4, o: Mat4) Mat4 {
+    /// Compose: self * other. The legacy API keeps its unchecked arithmetic.
+    /// Use `tryMul` with externally supplied or otherwise unbounded matrices.
+    pub fn mul(self: Mat4, other: Mat4) Mat4 {
+        return self.mulImpl(other, false) catch unreachable;
+    }
+
+    /// Checked composition, using the same per-product Q16.16 rounding and
+    /// left-to-right addition as `mul`. Each product and intermediate sum must
+    /// fit i32, even when a later term would cancel an overflow.
+    pub fn tryMul(self: Mat4, other: Mat4) error{TransformOverflow}!Mat4 {
+        return self.mulImpl(other, true);
+    }
+
+    fn mulImpl(self: Mat4, o: Mat4, comptime checked: bool) error{TransformOverflow}!Mat4 {
         return .{
-            .m00 = fixed.mulQ16(self.m00, o.m00) + fixed.mulQ16(self.m01, o.m10) + fixed.mulQ16(self.m02, o.m20),
-            .m01 = fixed.mulQ16(self.m00, o.m01) + fixed.mulQ16(self.m01, o.m11) + fixed.mulQ16(self.m02, o.m21),
-            .m02 = fixed.mulQ16(self.m00, o.m02) + fixed.mulQ16(self.m01, o.m12) + fixed.mulQ16(self.m02, o.m22),
-            .m03 = fixed.mulQ16(self.m00, o.m03) + fixed.mulQ16(self.m01, o.m13) + fixed.mulQ16(self.m02, o.m23) + self.m03,
-            .m10 = fixed.mulQ16(self.m10, o.m00) + fixed.mulQ16(self.m11, o.m10) + fixed.mulQ16(self.m12, o.m20),
-            .m11 = fixed.mulQ16(self.m10, o.m01) + fixed.mulQ16(self.m11, o.m11) + fixed.mulQ16(self.m12, o.m21),
-            .m12 = fixed.mulQ16(self.m10, o.m02) + fixed.mulQ16(self.m11, o.m12) + fixed.mulQ16(self.m12, o.m22),
-            .m13 = fixed.mulQ16(self.m10, o.m03) + fixed.mulQ16(self.m11, o.m13) + fixed.mulQ16(self.m12, o.m23) + self.m13,
-            .m20 = fixed.mulQ16(self.m20, o.m00) + fixed.mulQ16(self.m21, o.m10) + fixed.mulQ16(self.m22, o.m20),
-            .m21 = fixed.mulQ16(self.m20, o.m01) + fixed.mulQ16(self.m21, o.m11) + fixed.mulQ16(self.m22, o.m21),
-            .m22 = fixed.mulQ16(self.m20, o.m02) + fixed.mulQ16(self.m21, o.m12) + fixed.mulQ16(self.m22, o.m22),
-            .m23 = fixed.mulQ16(self.m20, o.m03) + fixed.mulQ16(self.m21, o.m13) + fixed.mulQ16(self.m22, o.m23) + self.m23,
+            .m00 = try dot3(checked, self.m00, self.m01, self.m02, o.m00, o.m10, o.m20, 0),
+            .m01 = try dot3(checked, self.m00, self.m01, self.m02, o.m01, o.m11, o.m21, 0),
+            .m02 = try dot3(checked, self.m00, self.m01, self.m02, o.m02, o.m12, o.m22, 0),
+            .m03 = try dot3(checked, self.m00, self.m01, self.m02, o.m03, o.m13, o.m23, self.m03),
+            .m10 = try dot3(checked, self.m10, self.m11, self.m12, o.m00, o.m10, o.m20, 0),
+            .m11 = try dot3(checked, self.m10, self.m11, self.m12, o.m01, o.m11, o.m21, 0),
+            .m12 = try dot3(checked, self.m10, self.m11, self.m12, o.m02, o.m12, o.m22, 0),
+            .m13 = try dot3(checked, self.m10, self.m11, self.m12, o.m03, o.m13, o.m23, self.m13),
+            .m20 = try dot3(checked, self.m20, self.m21, self.m22, o.m00, o.m10, o.m20, 0),
+            .m21 = try dot3(checked, self.m20, self.m21, self.m22, o.m01, o.m11, o.m21, 0),
+            .m22 = try dot3(checked, self.m20, self.m21, self.m22, o.m02, o.m12, o.m22, 0),
+            .m23 = try dot3(checked, self.m20, self.m21, self.m22, o.m03, o.m13, o.m23, self.m23),
         };
     }
 
     /// Transform a 3D point. Returns (x, y, z) in Q16.16.
     pub fn applyPoint(self: Mat4, x: i32, y: i32, z: i32) struct { x: i32, y: i32, z: i32 } {
+        const point = self.applyPointImpl(x, y, z, false) catch unreachable;
+        return .{ .x = point.x, .y = point.y, .z = point.z };
+    }
+
+    /// Checked alternative to `applyPoint`, with the same rounding semantics.
+    pub fn tryApplyPoint(self: Mat4, x: i32, y: i32, z: i32) error{TransformOverflow}!struct { x: i32, y: i32, z: i32 } {
+        const point = try self.applyPointImpl(x, y, z, true);
+        return .{ .x = point.x, .y = point.y, .z = point.z };
+    }
+
+    fn applyPointImpl(self: Mat4, x: i32, y: i32, z: i32, comptime checked: bool) error{TransformOverflow}!struct { x: i32, y: i32, z: i32 } {
         return .{
-            .x = fixed.mulQ16(self.m00, x) + fixed.mulQ16(self.m01, y) + fixed.mulQ16(self.m02, z) + self.m03,
-            .y = fixed.mulQ16(self.m10, x) + fixed.mulQ16(self.m11, y) + fixed.mulQ16(self.m12, z) + self.m13,
-            .z = fixed.mulQ16(self.m20, x) + fixed.mulQ16(self.m21, y) + fixed.mulQ16(self.m22, z) + self.m23,
+            .x = try dot3(checked, self.m00, self.m01, self.m02, x, y, z, self.m03),
+            .y = try dot3(checked, self.m10, self.m11, self.m12, x, y, z, self.m13),
+            .z = try dot3(checked, self.m20, self.m21, self.m22, x, y, z, self.m23),
         };
     }
 };
+
+// The legacy and checked entry points share the exact expression order and
+// per-product rounding; `checked` is resolved at comptime on the hot path.
+fn dot3(comptime checked: bool, a0: i32, a1: i32, a2: i32, b0: i32, b1: i32, b2: i32, offset: i32) error{TransformOverflow}!i32 {
+    const p0 = try product(checked, a0, b0);
+    const p1 = try product(checked, a1, b1);
+    const p2 = try product(checked, a2, b2);
+    return try add(checked, try add(checked, try add(checked, p0, p1), p2), offset);
+}
+
+fn product(comptime checked: bool, a: i32, b: i32) error{TransformOverflow}!i32 {
+    if (checked) return fixed.tryMulQ16(a, b) catch error.TransformOverflow;
+    return fixed.mulQ16(a, b);
+}
+
+fn add(comptime checked: bool, a: i32, b: i32) error{TransformOverflow}!i32 {
+    if (checked) return std.math.add(i32, a, b) catch error.TransformOverflow;
+    return a + b;
+}
 
 fn normAngle(angle_deg: i32) usize {
     const three_sixty: i32 = 360;
@@ -231,4 +273,56 @@ test "3D identity composition preserves negative values exactly" {
     const transform = Mat4{ .m00 = -65536, .m01 = -1234, .m03 = -5, .m13 = -17, .m23 = -3 };
     try testing.expectEqualDeep(transform, Mat4.identity().mul(transform));
     try testing.expectEqual(@as(i32, -5), Mat4.identity().applyPoint(-5, 0, 0).x);
+}
+
+test "checked 3D operations match existing arithmetic for bounded inputs" {
+    var seed: u32 = 17;
+    for (0..256) |_| {
+        var a = Mat4.identity();
+        var b = Mat4.identity();
+        inline for (@typeInfo(Mat4).@"struct".field_names) |name| {
+            seed = seed *% 1664525 +% 1013904223;
+            @field(a, name) = @as(i32, @intCast(seed % 131073)) - 65536;
+            seed = seed *% 1664525 +% 1013904223;
+            @field(b, name) = @as(i32, @intCast(seed % 131073)) - 65536;
+        }
+        try testing.expectEqualDeep(a.mul(b), try a.tryMul(b));
+        const old_point = a.applyPoint(-7, 2, 65536);
+        const checked_point = try a.tryApplyPoint(-7, 2, 65536);
+        try testing.expectEqual(old_point.x, checked_point.x);
+        try testing.expectEqual(old_point.y, checked_point.y);
+        try testing.expectEqual(old_point.z, checked_point.z);
+
+        // Independent row/column oracle catches field-index mistakes. Each
+        // product rounds separately, matching the established Q16 contract.
+        const left = [_][4]i32{ .{ a.m00, a.m01, a.m02, a.m03 }, .{ a.m10, a.m11, a.m12, a.m13 }, .{ a.m20, a.m21, a.m22, a.m23 } };
+        const right = [_][4]i32{ .{ b.m00, b.m01, b.m02, b.m03 }, .{ b.m10, b.m11, b.m12, b.m13 }, .{ b.m20, b.m21, b.m22, b.m23 } };
+        const result = try a.tryMul(b);
+        const actual = [_][4]i32{ .{ result.m00, result.m01, result.m02, result.m03 }, .{ result.m10, result.m11, result.m12, result.m13 }, .{ result.m20, result.m21, result.m22, result.m23 } };
+        for (0..3) |row| for (0..4) |col| {
+            var expected: i64 = if (col == 3) left[row][3] else 0;
+            for (0..3) |k| expected += fixed.mulQ16(left[row][k], right[k][col]);
+            try testing.expectEqual(expected, @as(i64, actual[row][col]));
+        };
+    }
+    const rotated = try Mat4.rotationZ(90).tryMul(Mat4.translation(fixed_one, 0, 0));
+    try testing.expectEqual(@as(i32, 0), rotated.m03);
+    try testing.expectEqual(fixed_one, rotated.m13);
+}
+
+test "checked 3D arithmetic handles boundaries and detects each overflow" {
+    const lo = std.math.minInt(i32);
+    const hi = std.math.maxInt(i32);
+    const boundary = Mat4.translation(lo, hi, 0);
+    try testing.expectEqualDeep(boundary, try Mat4.identity().tryMul(boundary));
+    try testing.expectEqual(lo, (try Mat4.identity().tryApplyPoint(lo, hi, 0)).x);
+
+    try testing.expectError(error.TransformOverflow, (Mat4{ .m00 = hi }).tryMul(.{ .m00 = hi }));
+    try testing.expectError(error.TransformOverflow, (Mat4{ .m00 = fixed_one, .m01 = fixed_one }).tryMul(.{ .m00 = hi, .m10 = 1 }));
+    try testing.expectError(error.TransformOverflow, Mat4.translation(hi, 0, 0).tryMul(Mat4.translation(1, 0, 0)));
+    try testing.expectError(error.TransformOverflow, Mat4.translation(lo, 0, 0).tryMul(Mat4.translation(-1, 0, 0)));
+    try testing.expectError(error.TransformOverflow, Mat4.translation(hi, 0, 0).tryApplyPoint(1, 0, 0));
+    // Overflowing intermediate sums are not silently cancelled by later terms.
+    try testing.expectError(error.TransformOverflow, (Mat4{ .m00 = fixed_one, .m01 = fixed_one, .m02 = fixed_one }).tryMul(.{ .m00 = hi, .m10 = 1, .m20 = -1 }));
+    try testing.expectEqual(@as(i32, -1), (try (Mat4{ .m00 = 32768 }).tryApplyPoint(-1, 0, 0)).x);
 }

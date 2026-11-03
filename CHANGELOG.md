@@ -4,7 +4,9 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
-- Connected read-only content hierarchy to the headless Runtime. Parent handles and ordered children contribute to a versioned checksum extension, while smoke/flat checksums remain unchanged; child slices are freed on success and error. No 3D transform loading or propagation is implied.
+- Added a flat Q16.16 `LocalTransform3D` content codec and explicit `serializeAuthored` to omit computed/transient 3D state. Checked matrix arithmetic and dirty propagation report overflow, retain retry markers and support implicit identity through untransformed hierarchy nodes; legacy APIs remain available.
+- Connected static 3D content to the read-only headless Runtime, calculating world matrices parent-first during setup only. A separate optional checksum suffix covers local/computed matrices and dirty state; checksums without 3D remain unchanged. Raw derived components and invalid/overflowing matrices fail explicitly; no dynamic transform updates, gameplay or rendering are implied.
+- Connected read-only content hierarchy to the headless Runtime. Parent handles and ordered children contribute to a versioned checksum extension, while smoke/flat checksums remain unchanged; child slices are freed on success and error.
 - Replaced headless position and age arithmetic traps with checked `PositionOverflow` / `AgeOverflow` errors; a failed tick is not transactional and the run stops without a final report.
 - Restored the original `markDirty` ancestor markers and best-effort void behavior. Added a checked ancestor-marking API while preserving subtree-only `tryMarkDirty`, with retry, cycle, OOM and allocation-free repeat coverage.
 - Extended content-scene JSON with optional parent and sibling file indices. Round-trip preserves generational handle remapping and child order; forward parents, cycles, malformed links, allocator failure and cleanup are covered. Flat descriptors remain unchanged; older strict parsers cannot read the new fields.
