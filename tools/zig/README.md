@@ -1,4 +1,13 @@
-# Zig tooling
+# CoreX Zig Tooling
+
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
+
+Native repository tooling built with Zig 0.17.0 for fixture validation, target-policy checks, version metadata, dependency preparation, and CI output capture.
+
+> [!NOTE]
+> These tools validate contracts and policy. They do not establish native-window, graphics, or GPU support.
+
+---
 
 This package builds the repository's native validation and release tools with Zig 0.17.0. Its checks validate contracts and policy; they do not establish GPU or native-window support.
 
