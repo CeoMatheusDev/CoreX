@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Added `scene/ecs/query.zig`: allocation-free multi-component queries (`each`, `Iterator`, `count`) over any `World(StoresT)`. The first type in the query tuple drives iteration (put the rarest component first); remaining types are probed with O(1) sparse-set lookups. Scene tests: 68/68.
 - Added `scene/ecs/hierarchy.zig`: parent/child entity hierarchy as regular `SparseSet` components (`Parent`, `Children`) with cycle-safe reparenting, root detection, and `onDestroy` child reparenting to the grandparent. Any `World(Stores)` declaring these components gets hierarchy. Scene tests: 65/65.
 - Added `scene/content_serializer.zig`: deterministic JSON serializer that writes any `World(StoresT)` back to the content-scene format (entities in index order, components in store declaration order). Round-trips with `content_loader` (load → serialize → load preserves state). Replaced the `Scene.saveDescriptor` stub with the real implementation. Scene tests: 60/60.
 - Connected the content-scene loader to the Runtime headless executor: new `--scene <file>` CLI flag (Runtime-only, requires `--headless --frames N`), `RunRequest.scene_path`, and `run_mode.Request.io`. When set, the scene is parsed via `scene.content_format` and loaded via `scene.content_loader` instead of the embedded smoke scene; logs report `scene="content"`. Verified end-to-end: 2-entity scene file → `entities_alive=2`.

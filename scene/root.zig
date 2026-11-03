@@ -6,6 +6,7 @@ pub const sparse_set = @import("ecs/sparse_set.zig");
 pub const world = @import("ecs/world.zig");
 pub const systems = @import("ecs/systems.zig");
 pub const hierarchy = @import("ecs/hierarchy.zig");
+pub const query = @import("ecs/query.zig");
 pub const scene = @import("scene.zig");
 pub const format = @import("format.zig");
 pub const loader = @import("loader.zig");
@@ -29,6 +30,8 @@ test {
     _ = @import("ecs/sparse_set.zig");
     _ = @import("ecs/world.zig");
     _ = @import("ecs/systems.zig");
+    _ = @import("ecs/hierarchy.zig");
+    _ = @import("ecs/query.zig");
     _ = @import("scene.zig");
     _ = @import("content_format.zig");
     _ = @import("content_loader.zig");
