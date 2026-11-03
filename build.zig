@@ -19,6 +19,7 @@ pub fn build(b: *std.Build) void {
         const optimize_flag = b.fmt("-Doptimize={s}", .{@tagName(optimize)});
         const commands = [_]struct { dir: []const u8, step: []const u8 }{
             .{ .dir = "tools/zig", .step = "validate" },
+            .{ .dir = "core", .step = "test" },
             .{ .dir = "shared", .step = "test" },
             .{ .dir = "editor", .step = "test" },
             .{ .dir = "runtime", .step = "test" },
@@ -43,7 +44,7 @@ pub fn build(b: *std.Build) void {
             "src/graphics/renderer/render.zig",      "tests/events/test_basics.zig",
             "tests/integration/engine_pipeline.zig", "shared",
             "editor",                                "runtime",
-            "tools/zig",
+            "tools/zig",                             "core",
         });
         format.setCwd(b.path("."));
         format.has_side_effects = true;
@@ -114,6 +115,17 @@ pub fn build(b: *std.Build) void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    // Core is a separate package consumed by the Runtime; the root build keeps
+    // it compiled for cross targets and tested natively from one command.
+    const core_module = b.createModule(.{
+        .root_source_file = b.path("core/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const core_tests = b.addTest(.{ .root_module = core_module });
+    check.dependOn(&core_tests.step);
+    test_step.dependOn(&b.addRunArtifact(core_tests).step);
 
     const corex_platform_module = b.createModule(.{
         .root_source_file = b.path("src/platform/zigway.zig"),

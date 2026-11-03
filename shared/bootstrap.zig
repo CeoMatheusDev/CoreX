@@ -14,11 +14,38 @@ const process = @import("platform_ext/process.zig");
 
 pub const Exit = enum(u8) { success = 0, cli = 2, project = 3, unavailable = 4, child = 5, internal = 70, output = 74 };
 
+/// A concrete execution backend supplied by the application entry point.
+/// `shared` never links Core and never fabricates a runner: without one, an
+/// execution request keeps reporting `application.core_unavailable` instead of
+/// pretending that something ran.
+pub const Runner = struct {
+    context: ?*anyopaque = null,
+    run: *const fn (?*anyopaque, RunRequest) anyerror!RunReport,
+};
+
+pub const RunRequest = struct {
+    frames: u32,
+};
+
+pub const RunReport = struct {
+    frames: u32,
+    steps: u64,
+    ticks: u64,
+    input_ticks: u64,
+    phase_remainder: u64,
+};
+
 /// Entry points share contracts, not process state. All owned buffers/documents
 /// are destroyed before returning the exit code to main.
 pub fn entry(init: std.process.Init, kind: cli.Kind) u8 {
+    return entryWith(init, kind, null);
+}
+
+/// Same contract as `entry`, with an optional execution backend. The Editor and
+/// the Runtime both call this; only the Runtime supplies a runner today.
+pub fn entryWith(init: std.process.Init, kind: cli.Kind, runner: ?Runner) u8 {
     var logger = logging.Logger.init(init.io, kind);
-    const code = collectArgs(init, kind, &logger) catch |err| {
+    const code = collectArgs(init, kind, &logger, runner) catch |err| {
         if (err == error.LogSinkFailed) return @backingInt(Exit.output);
         logger.emit(.@"error", "application.internal_error", "Falha interna no bootstrap", .{ .code = @errorName(err) }) catch return @backingInt(Exit.output);
         return @backingInt(Exit.internal);
@@ -26,7 +53,7 @@ pub fn entry(init: std.process.Init, kind: cli.Kind) u8 {
     return @backingInt(code);
 }
 
-fn collectArgs(init: std.process.Init, kind: cli.Kind, logger: *logging.Logger) !Exit {
+fn collectArgs(init: std.process.Init, kind: cli.Kind, logger: *logging.Logger, runner: ?Runner) !Exit {
     var iterator = try std.process.Args.iterateAllocator(init.minimal.args, init.gpa);
     defer iterator.deinit();
     _ = iterator.next();
@@ -40,17 +67,17 @@ fn collectArgs(init: std.process.Init, kind: cli.Kind, logger: *logging.Logger) 
         arguments[count] = arg;
         count += 1;
     }
-    return execute(init.gpa, init.io, kind, arguments[0..count], logger);
+    return execute(init.gpa, init.io, kind, arguments[0..count], logger, runner);
 }
 
-fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const []const u8, logger: *logging.Logger) !Exit {
+fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const []const u8, logger: *logging.Logger, runner: ?Runner) !Exit {
     const options = cli.parse(kind, arguments) catch |err| {
         try logger.emit(.@"error", "cli.invalid", "Argumentos invalidos; use --help", .{ .code = @errorName(err) });
         return .cli;
     };
     if (options.help) {
         try logger.emit(.info, "cli.help", "Bootstrap de validacao; execucao grafica/simulacao ainda indisponivel", .{
-            .usage = if (kind == .editor) "CoreXEditor (--version | --project <file.proj> | <file.proj>) [--headless] [--validate-only] [--check-runtime <absolute-executable>]" else "CoreXRuntime (--version | --project <file.proj> [--headless] [--validate-only])",
+            .usage = if (kind == .editor) "CoreXEditor (--version | --project <file.proj> | <file.proj>) [--headless] [--validate-only] [--check-runtime <absolute-executable>]" else "CoreXRuntime (--version | --project <file.proj> [--headless] [--validate-only] | --project <file.proj> --headless --frames <1-1000000>)",
             .validation_scope = "document_and_presets",
             .core_linked = false,
         });
@@ -152,6 +179,41 @@ fn execute(a: std.mem.Allocator, io: std.Io, kind: cli.Kind, arguments: []const 
         .gpu_created = false,
         .capabilities_checked = false,
     });
+    if (options.frames) |frames| {
+        const execution = runner orelse {
+            try logger.emit(.@"error", "application.core_unavailable", "Execucao headless solicitada sem executor ligado neste bootstrap", .{ .code = "CoreApplicationAdapterUnavailable", .headless = options.headless, .core_linked = false, .frames_requested = frames });
+            return .unavailable;
+        };
+        // Execution here is deterministic and headless: no window, no GPU, no
+        // scene and no presented frame. The counters come from the runner.
+        try logger.emit(.info, "runtime.run_starting", "Execucao headless deterministica iniciada; sem janela, GPU, cena ou entrada real", .{
+            .frames_requested = frames,
+            .tick_hz = @as(u32, 60),
+            .frame_ns = @as(u64, 16_666_667),
+            .headless = true,
+            .core_linked = true,
+            .gpu_created = false,
+            .window_created = false,
+            .input_staged = false,
+        });
+        const report = execution.run(execution.context, .{ .frames = frames }) catch |err| {
+            try logger.emit(.@"error", "runtime.run_failed", "Executor headless retornou erro; nenhum frame foi apresentado", .{ .code = @errorName(err), .core_linked = true, .gpu_created = false });
+            return .internal;
+        };
+        try logger.emit(.info, "runtime.run_complete", "Execucao headless concluida; nenhum frame foi apresentado", .{
+            .frames = report.frames,
+            .steps = report.steps,
+            .ticks = report.ticks,
+            .input_ticks = report.input_ticks,
+            .phase_remainder = report.phase_remainder,
+            .presented_frames = @as(u32, 0),
+            .play_started = false,
+            .core_linked = true,
+            .gpu_created = false,
+            .window_created = false,
+        });
+        return .success;
+    }
     if (!options.validate_only) {
         try logger.emit(.@"error", "application.core_unavailable", "Execucao grafica/simulacao nao implementada neste bootstrap; use --validate-only para verificar documentos", .{ .code = "CoreApplicationAdapterUnavailable", .headless = options.headless, .core_linked = false });
         return .unavailable;

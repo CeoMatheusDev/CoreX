@@ -901,6 +901,69 @@ test "normal and headless execution fail instead of faking core" {
     }
 }
 
+test "headless run executes the core loop without a window or gpu" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    var run = Run.init();
+    defer run.deinit();
+    try f.runApp(&run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "120" }, .{ .expected = 0 });
+
+    const starting = try run.event("runtime.run_starting");
+    try expectIntField(starting, "frames_requested", 120);
+    try expectIntField(starting, "tick_hz", 60);
+    try expectIntField(starting, "frame_ns", 16_666_667);
+    try expectBoolField(starting, "headless", true);
+    try expectBoolField(starting, "core_linked", true);
+    try expectBoolField(starting, "gpu_created", false);
+    try expectBoolField(starting, "window_created", false);
+    try expectBoolField(starting, "input_staged", false);
+
+    const complete = try run.event("runtime.run_complete");
+    try expectIntField(complete, "frames", 120);
+    try expectIntField(complete, "steps", 120);
+    try expectIntField(complete, "ticks", 120);
+    try expectIntField(complete, "input_ticks", 120);
+    try expectIntField(complete, "phase_remainder", 2_400);
+    try expectIntField(complete, "presented_frames", 0);
+    try expectBoolField(complete, "play_started", false);
+    try expectBoolField(complete, "gpu_created", false);
+    try expectBoolField(complete, "core_linked", true);
+
+    // Execution is neither a validation pass nor a renderer claim.
+    for (run.roots.items) |root| {
+        const event = try textField(root, "event");
+        try std.testing.expect(!std.mem.eql(u8, event, "runtime.validation_complete"));
+        try std.testing.expect(!std.mem.eql(u8, event, "runtime.ready"));
+    }
+}
+
+test "execution flags are explicit bounded and rejected otherwise" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    const cases = [_]struct { arguments: []const []const u8, code: []const u8 }{
+        .{ .arguments = &.{ "--project", f.project_path, "--frames", "10" }, .code = "InvalidCombination" },
+        .{ .arguments = &.{ "--project", f.project_path, "--headless", "--frames", "0" }, .code = "InvalidValue" },
+        .{ .arguments = &.{ "--project", f.project_path, "--headless", "--frames", "1000001" }, .code = "InvalidValue" },
+        .{ .arguments = &.{ "--project", f.project_path, "--headless", "--frames", "12x" }, .code = "InvalidValue" },
+        .{ .arguments = &.{ "--project", f.project_path, "--headless", "--frames" }, .code = "MissingValue" },
+        .{ .arguments = &.{ "--project", f.project_path, "--headless", "--validate-only", "--frames", "10" }, .code = "InvalidCombination" },
+        .{ .arguments = &.{ "--project", f.project_path, "--headless", "--frames", "1", "--frames", "2" }, .code = "DuplicateArgument" },
+    };
+    for (cases) |case| {
+        var run = Run.init();
+        defer run.deinit();
+        try f.runApp(&run, f.runtime, case.arguments, .{ .expected = 2 });
+        try expectTextField(try run.event("cli.invalid"), "code", case.code);
+    }
+    // The Editor has no play mode: accepting --frames there would imply one.
+    var editor_run = Run.init();
+    defer editor_run.deinit();
+    try f.runApp(&editor_run, f.editor, &.{ "--project", f.project_path, "--headless", "--frames", "10" }, .{ .expected = 2 });
+    try expectTextField(try editor_run.event("cli.invalid"), "code", "InvalidCombination");
+}
+
 test "engine identity mismatch" {
     try requirePosix();
     var f = try Fixture.init();

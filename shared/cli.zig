@@ -8,8 +8,15 @@ pub const Options = struct {
     help: bool = false,
     version: bool = false,
     check_runtime: ?[]const u8 = null,
+    /// Opt-in headless execution. No other value means "execute".
+    frames: ?u32 = null,
 };
-pub const Error = error{ TooManyArguments, UnknownArgument, DuplicateArgument, MissingValue, MissingProject, InvalidPathArgument, InvalidCombination };
+pub const Error = error{ TooManyArguments, UnknownArgument, DuplicateArgument, MissingValue, MissingProject, InvalidPathArgument, InvalidCombination, InvalidValue };
+
+/// Upper bound accepted by the CLI. `runtime/src/run_mode.zig` keeps the same
+/// ceiling because `shared` must not depend on the Runtime package; both sides
+/// reject anything larger instead of truncating a run.
+pub const max_frames: u32 = 1_000_000;
 
 /// Validate a borrowed CLI path before use or asynchronous copying.
 pub fn validatePath(path: []const u8) Error!void {
@@ -37,6 +44,13 @@ pub fn parse(kind: Kind, args: []const []const u8) Error!Options {
             if (o.project != null) return error.DuplicateArgument;
             try validatePath(arg);
             o.project = arg;
+        } else if (std.mem.eql(u8, arg, "--frames")) {
+            if (o.frames != null) return error.DuplicateArgument;
+            i += 1;
+            if (i == args.len or std.mem.startsWith(u8, args[i], "--")) return error.MissingValue;
+            const frames = std.fmt.parseInt(u32, args[i], 10) catch return error.InvalidValue;
+            if (frames == 0 or frames > max_frames) return error.InvalidValue;
+            o.frames = frames;
         } else if (std.mem.eql(u8, arg, "--headless")) {
             if (o.headless) return error.DuplicateArgument;
             o.headless = true;
@@ -57,6 +71,11 @@ pub fn parse(kind: Kind, args: []const []const u8) Error!Options {
     }
     if (o.project == null) return error.MissingProject;
     if (o.check_runtime != null and (kind != .editor or !o.validate_only)) return error.InvalidCombination;
+    if (o.frames != null) {
+        // Execution is Runtime-only, headless-only and never mixed with a
+        // validation-only pass: an execution request always means Run.
+        if (kind != .runtime or !o.headless or o.validate_only) return error.InvalidCombination;
+    }
     return o;
 }
 
@@ -101,4 +120,23 @@ test "editor accepts a single positional project for desktop file opening" {
     var long: [4101]u8 = @splat('x');
     @memcpy(long[4096..], ".proj");
     try std.testing.expectError(error.InvalidPathArgument, parse(.editor, &.{&long}));
+}
+
+test "frames is an explicit runtime-only headless execution request" {
+    const options = try parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "120" });
+    try std.testing.expectEqual(@as(?u32, 120), options.frames);
+    try std.testing.expect(options.headless and !options.validate_only);
+    try std.testing.expectEqual(@as(?u32, null), (try parse(.runtime, &.{ "--project", "Game.proj" })).frames);
+    // Execution without headless, with validate-only, or from the Editor is a
+    // contradiction, not an implicit default.
+    try std.testing.expectError(error.InvalidCombination, parse(.runtime, &.{ "--project", "Game.proj", "--frames", "120" }));
+    try std.testing.expectError(error.InvalidCombination, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--validate-only", "--frames", "120" }));
+    try std.testing.expectError(error.InvalidCombination, parse(.editor, &.{ "--project", "Game.proj", "--headless", "--frames", "120" }));
+    // Values are bounded, decimal and never silently clamped.
+    try std.testing.expectError(error.InvalidValue, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "0" }));
+    try std.testing.expectError(error.InvalidValue, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "1000001" }));
+    try std.testing.expectError(error.InvalidValue, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "12x" }));
+    try std.testing.expectError(error.MissingValue, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames" }));
+    try std.testing.expectError(error.DuplicateArgument, parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "1", "--frames", "2" }));
+    try std.testing.expectEqual(@as(?u32, max_frames), (try parse(.runtime, &.{ "--project", "Game.proj", "--headless", "--frames", "1000000" })).frames);
 }

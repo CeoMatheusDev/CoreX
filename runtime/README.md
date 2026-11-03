@@ -2,16 +2,16 @@
 
 ![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
 
-Standalone Zig 0.17.0 + C23 project-validation bootstrap. It validates project configuration; it does not execute games.
+Standalone Zig 0.17.0 + C23 project-validation bootstrap plus a deterministic headless frame loop. It validates project configuration and, when explicitly asked with `--frames`, runs a fixed-step loop with no scene, window or GPU; it does not execute games.
 
 > [!NOTE]
-> Current capability: configuration validation only. No scene loading, gameplay loop, window, or graphics device is initialized.
+> Current capability: configuration validation and a deterministic headless frame loop (`--frames`). No scene loading, gameplay, window, or graphics device is initialized, and no frame is presented.
 
 ---
 
 > **Product scope:** Windows and Linux; 3D Editor with UI/Canvas, no 2D scene mode. Vulkan/OpenGL are planned on both platforms; D3D11/D3D12 are Windows-only. Eligibility does not imply a renderer exists. See [ADR-003](../docs/ADR-003-desktop-3d-canvas.md).
 
-CoreXRuntime is a standalone Zig 0.17.0 + C23 project-validation bootstrap. **It does not execute games.** It does not link the legacy Engine, create a window or graphics device, or start a gameplay loop. Zigway remains the intended windowing dependency for future graphical integration.
+CoreXRuntime is a standalone Zig 0.17.0 + C23 project-validation bootstrap. **It does not execute games.** It does not link the legacy Engine, create a window or graphics device, or run gameplay. Its headless loop (`--frames`) executes fixed-step accounting only. Zigway remains the intended windowing dependency for future graphical integration.
 
 ## Build
 
@@ -22,7 +22,7 @@ zig build
 zig build test
 ```
 
-The build imports `../shared`, compiles C sources with `-std=c23`, and installs `zig-out/bin/CoreXRuntime` (`.exe` on Windows) together with `zig-out/share/corex/{distribution.json,presets.zon}`. The manifest and embedded product identity are generated from the repository-root `VERSION`. Missing or corrupt install data is an error; the Runtime does not fall back to the working directory or project directory.
+The build imports `../shared` and `../core`, compiles C sources with `-std=c23`, and installs `zig-out/bin/CoreXRuntime` (`.exe` on Windows) together with `zig-out/share/corex/{distribution.json,presets.zon}`. The manifest and embedded product identity are generated from the repository-root `VERSION`. Missing or corrupt install data is an error; the Runtime does not fall back to the working directory or project directory.
 
 ## Validate a project
 
@@ -35,21 +35,43 @@ runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headle
 
 Validation reads the shared project schema, checks distribution identity, resolves presets and overrides, validates the C23 DTO, and writes JSON Lines logs with concrete configuration values. It emits `runtime.validation_complete`, **never `runtime.ready`**. It does not load scenes, assets, or scripts, negotiate the Core ABI, query a GPU, or simulate ticks. Success applies only to the document and presets.
 
-Without `--validate-only`, including with `--headless`, execution fails explicitly with a core-unavailable error (exit code 4). This prevents an empty simulation from being presented as a functioning Player. C++/Lua integration, a fixed-timestep gameplay loop, jobs, hot reload, and game UI remain pending; Editor UI is not embedded in the Runtime.
+Execution is opt-in through `--frames` (see below). Without it, execution requests — including with `--headless` — fail explicitly with a core-unavailable error (exit code 4). This prevents an empty simulation from being presented as a functioning Player. C++/Lua integration, scenes, jobs, hot reload, and game UI remain pending; Editor UI is not embedded in the Runtime.
+
+`shared/bootstrap.zig` defines an optional `Runner` contract (`RunRequest`, `RunReport`) and `entryWith`. The Runtime supplies its executor from `src/main.zig`; `shared` itself never links Core, so an application without a runner keeps reporting `application.core_unavailable`. See [ADR-006](../docs/ADR-006-core-library-and-headless-execution.md).
 
 The Runtime never writes `.proj` files. CLI options, exit codes, and protocol are documented in [APPLICATION_CLI.md](../docs/APPLICATION_CLI.md). Native Editor→Runtime process tests run with `python tools/test_bootstrap.py` from the repository root after building both applications. Native Windows execution is not currently available; a cross-build is not a substitute.
 
+## Deterministic headless execution (`--frames`)
+
+```sh
+runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --frames 120
+```
+
+This is the Runtime's first real executor. `--frames` is Runtime-only, requires `--headless`, and cannot be combined with `--validate-only` or `--check-runtime`. It accepts 1 to 1 000 000 decimal frames; `0`, out-of-range and non-decimal values are CLI errors (exit code 2).
+
+`src/run_mode.zig` builds a `corex_core` `Registry` with two subsystems (`runtime.input`, `runtime.ledger`) and drives them with the existing fixed-step scheduler:
+
+- simulation rate 60 Hz; each frame credits exactly 16 666 667 ns of a **virtual** clock (1/60 s rounded up, so the accumulator keeps 20 phase units per frame instead of losing a fraction);
+- at most 8 ticks per frame; overdue ticks stay in the accumulator instead of being discarded;
+- `runtime.input` opens and commits one empty input tick per step, proving input and simulation ticks stay aligned; no input is staged in headless mode and staged input is rejected;
+- `runtime.ledger` rejects discontinuous step indices, a changing step duration and subsystem reuse;
+- four independent counters (`steps`, scheduler `ticks`, `input_ticks`, ledger steps) must agree, otherwise the run fails with `error.AccountingMismatch` before anything is reported.
+
+The loop takes no allocator and reads no wall clock, so the same frame count always produces the same report. It emits `runtime.run_starting` and `runtime.run_complete` (or `runtime.run_failed`, exit code 70), always with `gpu_created=false`, `window_created=false`, `presented_frames=0` and `play_started=false`.
+
+Limits: there is **no** scene, asset, script, ECS integration, job queue, real input, window, Vulkan device or presented frame. `--frames` proves fixed-step accounting, lifecycle and teardown; it is not Play, not gameplay, and not evidence of a renderer. The Editor rejects `--frames` and still reports `application.core_unavailable` for execution requests.
+
 ## Time scheduler (not integrated into gameplay)
 
-`src/timing.zig` provides an integer accumulator with no internal allocation or clock. It uses the explicit 1–1000 Hz frequency from the schema and stores phase as `elapsed_ns * Hz`; one billion units correspond to one tick. This preserves the `1 / Hz` rate even when the frequency does not divide one second evenly in nanoseconds. The project configuration is not yet connected to this model in a running Runtime.
+`src/timing.zig` provides an integer accumulator with no internal allocation or clock. It uses the explicit 1–1000 Hz frequency from the schema and stores phase as `elapsed_ns * Hz`; one billion units correspond to one tick. This preserves the `1 / Hz` rate even when the frequency does not divide one second evenly in nanoseconds. Since this slice, `src/run_mode.zig` drives this model inside the headless executor; the rate is the loop's 60 Hz constant, not a value read from the project document.
 
 - `addElapsed` accepts a non-negative monotonic delta computed by a future loop. Overflow returns an error without changing state.
-- `pending(budget)` reports whole ticks currently due, capped by the iteration budget. It is a query, not a reservation; apply the budget once per iteration.
+- `pending(budget)` reports whole ticks currently due, capped by the iteration budget. It is a query, not a reservation; the headless loop applies the budget once per frame.
 - `nextTick` returns the zero-based next tick index or `null` when no tick is due. It reports counter exhaustion before work. Code using `commitTick` manually must check `nextTick` before running a tick and commit only after successful completion.
 - `runDue` is an alternative that accepts an explicit callback, checks exhaustion before each call, and commits only successful calls up to the budget. If a callback fails, earlier ticks stay committed and the failed tick remains due. Recursive mutation/execution through scheduler methods is rejected during the callback. The callback must not mutate scheduler fields directly or access it concurrently. Callback side effects are not rolled back; after partial failure, the caller must provide transactionality or stop the session rather than blindly retry.
 - `interpolationAlpha` returns `null` while ticks remain due; otherwise it returns the fraction in `[0, 1)`. This type does not store previous/current simulation state.
 
-There is no automatic backlog discard. Pause/resume, clock and delta handling, recovery policy, delay telemetry, input ordering by tick, jobs, replay, and integration into a real game loop remain undefined or unimplemented. These arithmetic tests do not prove deterministic gameplay or permit `runtime.ready`.
+There is no automatic backlog discard. Pause/resume, wall-clock and delta handling, recovery policy, delay telemetry, input ordering by tick, jobs, replay, and integration into a real game loop (scene, systems, presentation) remain undefined or unimplemented. The headless executor uses this model but does not prove deterministic gameplay, and nothing here permits `runtime.ready`.
 
 ## Tick-scoped input buffer (not a Zigway adapter or replay format)
 

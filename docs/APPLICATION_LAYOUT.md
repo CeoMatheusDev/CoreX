@@ -14,6 +14,12 @@ CoreX/
 ├── versioning/README.md            # uso do CLI Zig version/release
 ├── src/                           # [existente] biblioteca core; não duplicar em aplicações
 ├── .gitattributes                 # [atual] LF estável para fontes/fixtures e hashes
+├── core/                          # [atual] pacote independente; ciclo de vida e ownership, sem GPU
+│   ├── build.zig / build.zig.zon   # módulo corex_core; Zig puro, sem dependências
+│   ├── README.md                   # API, regras de ownership e testes
+│   ├── root.zig                    # exports lifecycle/subsystem
+│   ├── lifecycle.zig               # [atual] máquina de estados de aplicação
+│   └── subsystem.zig               # [atual] registry de capacidade fixa, ordem e teardown
 ├── shared/                        # [atual] pacote independente de contratos/bootstrap
 │   ├── build.zig / build.zig.zon   # módulo corex_app; Zig + C23; testes/check cross-target
 │   ├── root.zig / README.md        # exports e comandos/ownership
@@ -56,12 +62,13 @@ CoreX/
 │   │                              # code, viewport; todos via ZyntraUI
 │   ├── src/ui_adapter.zig         # [planejado] draw commands para renderer real do core
 │   └── tests/                     # [planejado] snapshots ZyntraUI e integração Play
-├── runtime/                       # [atual] pacote independente; bootstrap CLI, sem jogo ainda
-│   ├── build.zig / build.zig.zon   # shared local; instala binário, manifesto e tabela
+├── runtime/                       # [atual] pacote independente; bootstrap CLI + laço headless, sem jogo
+│   ├── build.zig / build.zig.zon   # shared + core locais; instala binário, manifesto e tabela
 │   ├── README.md
-│   ├── src/main.zig               # entrada com process.Init; bootstrap kind=runtime
-│   ├── src/application.zig        # [planejado] carga/fixed timestep/interpolação/core jobs
-│   ├── src/timing.zig             # [atual] contabilidade isolada de ticks, sem loop
+│   ├── src/main.zig               # entrada com process.Init; bootstrap kind=runtime; injeta o runner
+│   ├── src/run_mode.zig           # [atual] laço headless determinístico (--frames), sem GPU
+│   ├── src/application.zig        # [planejado] carga/cena/interpolação/core jobs
+│   ├── src/timing.zig             # [atual] contabilidade de ticks; consumida por run_mode.zig
 │   ├── src/tick_input.zig         # [atual] buffer limitado independente de plataforma
 │   ├── src/gameplay_host.zig      # [planejado] ABI C e VM Lua única via gameplay_api
 │   └── tests/                     # [planejado] replay, simulação headless e carga real

@@ -37,6 +37,7 @@ Use este índice para localizar contratos, evidências de implementação, decis
 | [ADR-003](ADR-003-desktop-3d-canvas.md) | Escopo Windows/Linux e autoria 3D/Canvas |
 | [ADR-004](ADR-004-project-opening-splash.md) | Abertura de projetos, splash e limites de implementação |
 | [ADR-005](ADR-005-vulkan-surface-integration.md) | Contrato de janela nativa Zigway necessário à futura integração Vulkan |
+| [ADR-006](ADR-006-core-library-and-headless-execution.md) | Biblioteca Core comum e execução headless determinística do Runtime |
 
 ## Desenvolvimento, ferramentas e versão
 

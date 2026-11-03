@@ -8,8 +8,10 @@ pub fn build(b: *std.Build) void {
     }
     const optimize = b.standardOptimizeOption(.{});
     const shared = b.dependency("shared", .{ .target = target, .optimize = optimize });
+    const core = b.dependency("core", .{ .target = target, .optimize = optimize });
     const mod = b.createModule(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize });
     mod.addImport("corex_app", shared.module("corex_app"));
+    mod.addImport("corex_core", core.module("corex_core"));
     const exe = b.addExecutable(.{ .name = "CoreXRuntime", .root_module = mod });
     b.installArtifact(exe);
     const manifest = shared.namedWriteFiles("corex_distribution").getDirectory().path(b, "distribution.json");

@@ -32,7 +32,8 @@ Sem `zig` no PATH, no Linux é possível instalar a distribuição fixada sem Py
 | `--version` | sim | sim | único argumento; emite identidade de produto embutida no binário e sai sem projeto/distribuição |
 | `--project <arquivo>` | sim | sim | obrigatório exceto em `--help`/`--version`, a menos que o Editor receba `.proj` posicional; caminho relativo ao CWD ou absoluto, UTF-8, até 4096 bytes |
 | `<arquivo.proj>` | sim | não | alternativa posicional para abertura pelo SO; extensão sem distinção de maiúsculas/minúsculas |
-| `--headless` | sim | sim | declara intenção de não usar janela/GPU; nesta fatia não executa simulação |
+| `--headless` | sim | sim | declara intenção de não usar janela/GPU; sozinho não executa nada |
+| `--frames <1..1000000>` | não | sim | execução headless determinística; exige `--headless` e é incompatível com `--validate-only`/`--check-runtime` |
 | `--validate-only` | sim | sim | valida somente documento/presets/distribuição; autoriza retorno zero nesse escopo |
 | `--check-runtime <executável-absoluto>` | sim | não | exige `--validate-only`; lança filho em validação, não Play |
 | `--help` | sim | sim | deve ser o único argumento; responde com um registro JSON lines e exit 0 |
@@ -54,18 +55,26 @@ editor/zig-out/bin/CoreXEditor \
   --check-runtime /caminho/real/CoreX/runtime/zig-out/bin/CoreXRuntime
 ```
 
-O exemplo não fornece cena/assets/scripts e **mesmo assim** é válido para `--validate-only`, pois esse modo não tenta carregar recursos. Sem `--validate-only`, inclusive com `--headless`, o mesmo exemplo falha com `application.core_unavailable` e exit 4. Não há fallback para cena/simulação vazia.
+O exemplo não fornece cena/assets/scripts e **mesmo assim** é válido para `--validate-only`, pois esse modo não tenta carregar recursos. Pedidos de execução sem `--frames` — inclusive com `--headless` — falham com `application.core_unavailable` e exit 4. Não há fallback para cena/simulação vazia.
+
+Execução headless explícita (Runtime apenas):
+
+```sh
+runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --frames 120
+```
+
+`--frames` aceita de 1 a 1 000 000 frames decimais. `0`, valor acima do limite, valor não decimal, repetição, ausência de valor, uso sem `--headless`, uso com `--validate-only`/`--check-runtime` e uso no Editor são erros de CLI (exit 2), nunca um padrão implícito. O modo usa relógio **virtual** de 16 666 667 ns por frame a 60 Hz, orçamento de 8 passos por frame, não lê tempo de parede, não cria janela/GPU/cena, não apresenta frame e não aceita entrada real; ver [ADR-006](ADR-006-core-library-and-headless-execution.md) e o [README do Runtime](../runtime/README.md).
 
 ## Códigos de saída
 
 | Código | Significado |
 | --- | --- |
-| 0 | ajuda ou validação solicitada concluída; não significa jogo executado |
+| 0 | ajuda, validação solicitada ou execução headless concluída; não significa jogo executado nem frame apresentado |
 | 2 | CLI inválida |
 | 3 | leitura do projeto, schema, campo ou configuração de presets inválida |
 | 4 | distribuição/versão incompatível ou execução core/gráfica/simulação indisponível |
 | 5 | falha ao criar/capturar/aguardar filho, timeout, exit não zero ou handshake divergente |
-| 70 | erro interno não classificado, incluindo falha de bootstrap/alocação não tratada no contexto específico |
+| 70 | erro interno não classificado, incluindo falha de bootstrap/alocação não tratada no contexto específico e `runtime.run_failed` do executor headless |
 | 74 | falha de saída do logger; pode não haver registro quando o pipe está quebrado |
 
 Nenhum caminho de erro normal imprime stack trace ou texto de diagnóstico avulso. Kill/crash externo ainda pode produzir status de sinal/encerramento do SO, não estes códigos controlados.
@@ -84,7 +93,8 @@ Eventos principais:
 - `graphics.config_resolved`: 27 valores concretos, overrides e identidade de tabela; `gpu_created=false`, `capabilities_checked=false`.
 - `editor.validation_complete` / `runtime.validation_complete`: escopo `document_and_presets`, fingerprint e flags explícitas de serviços ainda não carregados.
 - `runtime.check_starting` / `runtime.output` / `runtime.output_invalid` / `runtime.check_complete` / `runtime.check_failed`: supervisão pelo Editor. Os registros do filho ficam aninhados em `fields.record`, preservando origem/sessão/seq originais.
-- `application.core_unavailable`: erro em execução real solicitada antes da integração do core.
+- `application.core_unavailable`: execução real solicitada sem executor ligado na aplicação (por exemplo, sem `--frames`, ou no Editor).
+- `runtime.run_starting` / `runtime.run_complete`: laço headless determinístico; carregam contagens (`frames`, `steps`, `ticks`, `input_ticks`, `phase_remainder`) e sempre `gpu_created=false`, `window_created=false`, `presented_frames=0`, `play_started=false`. `runtime.run_failed` acompanha erro do executor.
 
 O fingerprint v4 inclui separadamente o perfil `desktop-3d-canvas-v1` e, quando presente em V3, o Renderer Profile solicitado, além do modelo normalizado completo do `.proj`, parâmetros gráficos resolvidos e manifesto validado/empacotado. Não inclui relógio, PID, sessão ou CWD. Não é assinatura/autenticação, hash de assets ou comprovação de determinismo da simulação/execução gráfica. Um `.proj` equivalente em defaults opcionais produz a mesma identidade; um projeto com configuração, Renderer Profile ou seed diferente não deve confirmá-la.
 
