@@ -1,0 +1,177 @@
+name: Application contracts and bootstraps
+
+on:
+  push:
+    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
+  pull_request:
+    paths: ['shared/**', 'editor/**', 'runtime/**', '.gitattributes', 'tools/**', 'docs/examples/**', 'docs/schemas/**', 'exemploproject/**', 'VERSION', 'VERSIONING.md', 'CHANGELOG.md', 'build.zig.zon', 'versioning/**', '.github/workflows/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-contracts:
+    name: Contracts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      # yamllint is part of the ubuntu-24.04 hosted runner image. Syntax only;
+      # GitHub Actions still validates workflow semantics when it loads them.
+      - name: Check workflow YAML syntax
+        run: |
+          yamllint -d '{rules: {}}' .github/workflows
+      - name: Check patch whitespace
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            base="origin/$GITHUB_BASE_REF"
+          else
+            base="$(jq -r '.before // empty' "$GITHUB_EVENT_PATH")"
+          fi
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git diff --check "$base...HEAD"
+          else
+            git diff --check HEAD^ HEAD
+          fi
+      - name: Install exact Zig toolchain without Python
+        run: |
+          sh tools/test_install_zig.sh
+          sh tools/install_zig.sh "$RUNNER_TEMP/corex-zig"
+          echo "ZIG_EXE=$RUNNER_TEMP/corex-zig/ziglang/zig" >> "$GITHUB_ENV"
+      - name: Verify compiler version
+        run: test "$("$ZIG_EXE" version)" = '0.17.0'
+      - name: Guard Python migration inventory
+        run: |
+          sh tools/check_python_inventory.sh
+          sh tools/test_python_inventory.sh
+      - name: Test CI output capture
+        run: python tools/test_ci_capture.py
+      - name: Test Zig tooling and black-box CLIs (Debug and ReleaseSafe)
+        working-directory: tools/zig
+        run: |
+          "$ZIG_EXE" build test -j2 --summary all
+          "$ZIG_EXE" build test -Doptimize=ReleaseSafe -j2 --summary all
+      - name: Build Zig tooling (Debug and ReleaseSafe)
+        working-directory: tools/zig
+        run: |
+          "$ZIG_EXE" build --summary all
+          "$ZIG_EXE" build -Doptimize=ReleaseSafe --prefix .zig-cache/release --summary all
+          echo "CI_CAPTURE=$GITHUB_WORKSPACE/tools/zig/zig-out/bin/corex-ci-capture" >> "$GITHUB_ENV"
+      - name: Validate VERSION and generated distribution manifest (both modes)
+        run: |
+          expected="$(cat VERSION)"
+          test "$(tools/zig/zig-out/bin/corex-version version)" = "$expected"
+          tools/zig/zig-out/bin/corex-version validate
+          tools/zig/zig-out/bin/corex-version release check
+          tools/zig/.zig-cache/release/bin/corex-version release check
+      - name: Test native Zig validation and fixture freshness
+        run: |
+          empty_path="$(mktemp -d)"
+          trap 'rm -rf "$empty_path"' EXIT
+          (cd tools/zig && PATH="$empty_path" "$ZIG_EXE" build validate -j2 --summary all)
+          sh tools/test_zig_validate.sh "$ZIG_EXE"
+      - name: Test Zig CI capture contract (Debug and ReleaseSafe)
+        run: |
+          sh tools/test_ci_capture_smoke.sh "$PWD/tools/zig/zig-out/bin/corex-ci-capture"
+          sh tools/test_ci_capture_smoke.sh "$PWD/tools/zig/.zig-cache/release/bin/corex-ci-capture"
+          COREX_CAPTURE_BIN="$PWD/tools/zig/zig-out/bin/corex-ci-capture" python tools/test_ci_capture.py
+          COREX_CAPTURE_BIN="$PWD/tools/zig/.zig-cache/release/bin/corex-ci-capture" python tools/test_ci_capture.py
+      - name: Check approved fixtures with Zig
+        run: tools/zig/zig-out/bin/corex-check-fixtures
+      - name: Compare fixture checker behavior on isolated inputs
+        run: |
+          python tools/test_fixture_checkers.py tools/zig/zig-out/bin/corex-check-fixtures
+          python tools/test_fixture_checkers.py tools/zig/.zig-cache/release/bin/corex-check-fixtures
+      - name: Cross-compile Zig tools and tests for Windows (no execution)
+        working-directory: tools/zig
+        run: |
+          "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+      - name: Check formatting
+        run: |
+          "$ZIG_EXE" fmt --check shared editor runtime tools/zig
+      - name: Test Zig and C23 contracts (Debug)
+        working-directory: shared
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build test --summary all
+      - name: Test Zig and C23 contracts (ReleaseSafe)
+        working-directory: shared
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build test -Doptimize=ReleaseSafe --summary all
+      - name: Check private C header with C++20, without RTTI/exceptions
+        run: |
+          "$CI_CAPTURE" c++ -std=c++20 -fno-rtti -fno-exceptions -Wall -Wextra -Werror -fsyntax-only -x c++ shared/graphics_abi.h shared/platform_ext/process_native.h
+      - name: Build independent bootstraps (Debug)
+        run: |
+          cd editor && "$CI_CAPTURE" "$ZIG_EXE" build --summary all
+          cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build --summary all
+      # Native Zig port of tools/test_bootstrap.py. The Python reference stays in
+      # CI until this port is validated remotely and reaches full parity.
+      - name: Test real processes with native Zig probes (Debug; validation only)
+        working-directory: tools/zig
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build test-bootstrap-cli -j2 --summary all
+      - name: Verify manifest reproducibility and Editor/Runtime parity
+        run: |
+          set -eu
+          temp="$(mktemp -d)"
+          trap 'rm -rf "$temp"' EXIT
+          (cd editor && ZIG_LOCAL_CACHE_DIR="$temp/editor-cache-first" "$ZIG_EXE" build --prefix "$temp/first" --summary all)
+          (cd editor && ZIG_LOCAL_CACHE_DIR="$temp/editor-cache-second" "$ZIG_EXE" build --prefix "$temp/second" --summary all)
+          cmp "$temp/first/share/corex/distribution.json" "$temp/second/share/corex/distribution.json"
+          cmp "$temp/first/share/corex/presets.zon" "$temp/second/share/corex/presets.zon"
+          cmp editor/zig-out/share/corex/distribution.json runtime/zig-out/share/corex/distribution.json
+          cmp editor/zig-out/share/corex/presets.zon runtime/zig-out/share/corex/presets.zon
+          editor_identity="$(editor/zig-out/bin/CoreXEditor --version | jq -r '.fields.engine_version + "/" + .fields.project_engine_version')"
+          runtime_identity="$(runtime/zig-out/bin/CoreXRuntime --version | jq -r '.fields.engine_version + "/" + .fields.project_engine_version')"
+          test "$editor_identity" = "$runtime_identity"
+      - name: Test application interaction models
+        run: |
+          cd editor && "$CI_CAPTURE" "$ZIG_EXE" build test --summary all
+          cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build test --summary all
+      - name: Reject unsupported product targets (Zig)
+        run: |
+          ROOT="$PWD"
+          cd tools/zig
+          ./zig-out/bin/corex-check-targets --root "$ROOT" --zig "$ZIG_EXE"
+      - name: Test real processes (Debug; validation only)
+        run: |
+          "$CI_CAPTURE" python tools/test_bootstrap.py
+      - name: Build independent bootstraps (ReleaseSafe)
+        run: |
+          cd editor && "$CI_CAPTURE" "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
+          cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build -Doptimize=ReleaseSafe --summary all
+      - name: Test real processes with native Zig probes (ReleaseSafe; validation only)
+        working-directory: tools/zig
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build test-bootstrap-cli -Doptimize=ReleaseSafe -j2 --summary all
+      - name: Test runtime accounting (ReleaseSafe)
+        working-directory: runtime
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build test -Doptimize=ReleaseSafe --summary all
+      - name: Test real processes (ReleaseSafe; validation only)
+        run: |
+          "$CI_CAPTURE" python tools/test_bootstrap.py
+      - name: Cross-compile Windows contracts (not native execution)
+        if: matrix.os == 'ubuntu-24.04'
+        working-directory: shared
+        run: |
+          "$CI_CAPTURE" "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+          cd ../editor && "$CI_CAPTURE" "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+          cd ../runtime && "$CI_CAPTURE" "$ZIG_EXE" build check -Dtarget=x86_64-windows-gnu -j2 --summary all
+
+# Validation bootstraps only; not a full graphical Editor/Runtime CI matrix. Native Windows needs a
+# verified Zig 0.17.0 Windows distribution (P16); no wheel is published at the
+# time of implementation. Cross-compilation must not be reported as native tests.
+
+# Product scope: Windows/Linux only (ADR-003). No macOS job or artifact support.

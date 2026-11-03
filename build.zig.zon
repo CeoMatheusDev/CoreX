@@ -1,0 +1,34 @@
+.{
+    .name = .corex,
+    .version = "0.1.0",
+    .fingerprint = 0x6ad4c70777a05985,
+    .dependencies = .{
+        .zigway = .{
+            .url = "https://github.com/CeoMatheusDev/Zigway/archive/refs/tags/v0.1.0-alpha.4.tar.gz",
+            .hash = "zigway-0.1.0-alpha.4-J1VBH_6UDAB_K4K2qoaGf3VkKqRxg2T5tgKqJzWQsJ_P",
+        },
+        .zyntra_ui = .{
+            .url = "https://github.com/CeoMatheusDev/ZyntraUI/archive/refs/tags/v1.44.1.tar.gz",
+            .hash = "zyntra_ui-1.44.1-sgzbJL9GLABJOlz_u9WkQYOw3lVB2d7TJBbbXSHudeYN",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "VERSION",
+        "VERSIONING.md",
+        "CHANGELOG.md",
+        "versioning",
+        "src",
+        "core",
+        "scene",
+        "shared",
+        "editor",
+        "runtime",
+        "docs",
+        "tests",
+        "examples",
+        "exemploproject",
+        "tools",
+    },
+}

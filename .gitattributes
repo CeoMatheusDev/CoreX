@@ -1,0 +1,12 @@
+# Distribution digests are byte identities; keep packaged text stable on Windows.
+VERSION text eol=lf
+*.zig text eol=lf
+*.zon text eol=lf
+*.proj text eol=lf
+*.json text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.txt text eol=lf

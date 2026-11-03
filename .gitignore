@@ -1,0 +1,12 @@
+.zig-cache/
+zig-pkg/
+zig-out/
+*.swp
+*.tmp
+
+.venv/
+.cache/
+
+# Local Python tooling caches
+__pycache__/
+*.py[cod]

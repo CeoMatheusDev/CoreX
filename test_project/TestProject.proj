@@ -1,0 +1,32 @@
+{
+    "project": {
+        "name": "TestProject",
+        "version": "1.0.0",
+        "engine": "CoreX"
+    },
+    "graphics": {
+        "quality": "high",
+        "api": "vulkan",
+        "resolution": {
+            "width": 1920,
+            "height": 1080
+        },
+        "vsync": true,
+        "fullscreen": false,
+        "window": {
+            "x": 100,
+            "y": 100
+        }
+    },
+    "physics": {
+        "fixed_timestep": 0.0166667,
+        "gravity": [0.0, -9.81, 0.0]
+    },
+    "scripting": {
+        "language": "lua",
+        "enabled": true
+    },
+    "scenes": {
+        "startup": "Assets/Scenes/Main.scene"
+    }
+}

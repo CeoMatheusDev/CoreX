@@ -1,0 +1,130 @@
+> **Perfil atual (ADR-003):** Windows/Linux, autoria 3D e UI/Canvas, sem cena 2D. Reader aceita schemas [1,2,3]; novos projetos V3 selecionam explicitamente `renderer.profile`. O profile é identidade solicitada, não prova de Renderer funcional. Contrato: [PROJECT_SCHEMA_V3.md](PROJECT_SCHEMA_V3.md); bloqueio de integração Vulkan/surface: [ADR-005](ADR-005-vulkan-surface-integration.md).
+
+# CLI das aplicações — bootstrap de validação
+
+Esta é uma interface executável **incremental**, não Editor gráfico nem Player de jogo completos. Decisões: [ADR-002](ADR-002-validation-bootstrap.md). Continua usando os schemas aprovados e não requer Hub.
+
+## Build independente (Zig 0.17.0)
+
+```sh
+(cd editor && zig build)
+(cd runtime && zig build)
+```
+
+Cada build compila Zig + C23 do módulo compartilhado e instala seu próprio prefixo:
+
+```text
+editor/zig-out/ ou runtime/zig-out/
+├── bin/CoreXEditor[.exe] ou CoreXRuntime[.exe]
+└── share/corex/
+    ├── distribution.json
+    └── presets.zon
+```
+
+É possível instalar os dois num prefixo comum com `zig build --prefix <diretório>`, desde que ambos usem exatamente a mesma versão de código/manifesto/tabela. Copiar somente o binário sem `share/corex` causa erro; não há busca de fallback no projeto/CWD. Pode-se mover a árvore instalada inteira.
+
+Sem `zig` no PATH, no Linux é possível instalar a distribuição fixada sem Python com `tools/install_zig.sh`; veja [o guia de migração](PYTHON_REMOVAL.md). A versão 0.17.0 é exigida; não substituir por outra versão.
+
+## Argumentos
+
+| Argumento | Editor | Runtime | Regra |
+| --- | --- | --- | --- |
+| `--version` | sim | sim | único argumento; emite identidade de produto embutida no binário e sai sem projeto/distribuição |
+| `--project <arquivo>` | sim | sim | obrigatório exceto em `--help`/`--version`, a menos que o Editor receba `.proj` posicional; caminho relativo ao CWD ou absoluto, UTF-8, até 4096 bytes |
+| `<arquivo.proj>` | sim | não | alternativa posicional para abertura pelo SO; extensão sem distinção de maiúsculas/minúsculas |
+| `--headless` | sim | sim | declara intenção de não usar janela/GPU; sozinho não executa nada |
+| `--frames <1..1000000>` | não | sim | execução headless determinística com cena de fumaça embutida; exige `--headless` e é incompatível com `--validate-only`/`--check-runtime` |
+| `--validate-only` | sim | sim | valida somente documento/presets/distribuição; autoriza retorno zero nesse escopo |
+| `--check-runtime <executável-absoluto>` | sim | não | exige `--validate-only`; lança filho em validação, não Play |
+| `--help` | sim | sim | deve ser o único argumento; responde com um registro JSON lines e exit 0 |
+
+Até 32 argumentos após argv[0]. O Editor aceita somente um projeto, seja posicional ou `--project`; combinar os dois ou informar dois caminhos é erro. Caminhos posicionais iniciados com `-` exigem caminho absoluto ou prefixo `./`. Nenhuma associação do sistema é registrada por este argumento. Flags repetidas/desconhecidas, valores ausentes e combinações inválidas são erros. Não há sintaxe `--flag=value`, shell expansion, variáveis de ambiente ou comandos de build. Se um nome relativo começa com `--`, usar prefixo `./` para não ser confundido com uma flag. Valores de CLI não regravam o projeto.
+
+`--check-runtime` é ação explícita de confiança no binário indicado. Caminho relativo é recusado na supervisão, sem pesquisa de PATH. No Windows o executável deve ter sufixo `.exe`; scripts `.cmd`/`.bat` não são aceitos. Em POSIX, o SO pode interpretar um executável com shebang; a aplicação não o transforma em comando de shell. Não executar programas não confiáveis.
+
+## Exemplos na raiz do repositório
+
+```sh
+runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --validate-only
+editor/zig-out/bin/CoreXEditor --project docs/examples/EmptyGame.proj --headless --validate-only
+editor/zig-out/bin/CoreXEditor exemploproject/Example.proj --headless --validate-only
+
+# O caminho do Runtime deve ser absoluto (substituir /caminho/real/CoreX):
+editor/zig-out/bin/CoreXEditor \
+  --project docs/examples/EmptyGame.proj --headless --validate-only \
+  --check-runtime /caminho/real/CoreX/runtime/zig-out/bin/CoreXRuntime
+```
+
+O exemplo não fornece cena/assets/scripts e **mesmo assim** é válido para `--validate-only`, pois esse modo não tenta carregar recursos. Pedidos de execução sem `--frames` — inclusive com `--headless` — falham com `application.core_unavailable` e exit 4. Não há fallback para cena/simulação vazia.
+
+Execução headless explícita (Runtime apenas):
+
+```sh
+runtime/zig-out/bin/CoreXRuntime --project docs/examples/EmptyGame.proj --headless --frames 120
+```
+
+`--frames` aceita de 1 a 1 000 000 frames decimais. `0`, valor acima do limite, valor não decimal, repetição, ausência de valor, uso sem `--headless`, uso com `--validate-only`/`--check-runtime` e uso no Editor são erros de CLI (exit 2), nunca um padrão implícito. O modo usa relógio **virtual** de 16 666 667 ns por frame a 60 Hz, orçamento de 8 passos por frame, não lê tempo de parede, não cria janela/GPU, não carrega cena/assets/scripts, não apresenta frame e não aceita entrada real. Ele executa uma **cena de fumaça embutida** (8 entidades com `Position`/`Velocity`/`Age` e dois systems) para provar estado real e determinismo; ver [ADR-006](ADR-006-core-library-and-headless-execution.md), [ADR-008](ADR-008-scene-lifecycle-and-runtime-integration.md) e o [README do Runtime](../runtime/README.md).
+
+## Códigos de saída
+
+| Código | Significado |
+| --- | --- |
+| 0 | ajuda, validação solicitada ou execução headless concluída; não significa jogo executado nem frame apresentado |
+| 2 | CLI inválida |
+| 3 | leitura do projeto, schema, campo ou configuração de presets inválida |
+| 4 | distribuição/versão incompatível ou execução core/gráfica/simulação indisponível |
+| 5 | falha ao criar/capturar/aguardar filho, timeout, exit não zero ou handshake divergente |
+| 70 | erro interno não classificado, incluindo falha de bootstrap/alocação não tratada no contexto específico e `runtime.run_failed` do executor headless |
+| 74 | falha de saída do logger; pode não haver registro quando o pipe está quebrado |
+
+Nenhum caminho de erro normal imprime stack trace ou texto de diagnóstico avulso. Kill/crash externo ainda pode produzir status de sinal/encerramento do SO, não estes códigos controlados.
+
+## Protocolo e garantias observáveis
+
+Todos os registros oficiais seguem o envelope JSON lines v1 do ADR-001. Timestamps `YYYY-MM-DDTHH:mm:ss.sssZ`, `session_id`, `seq` por processo, nível, origem, evento, mensagem, `tick` (null nesta fatia), `fields` objeto e indicador opcional `message_truncated`.
+
+Eventos principais:
+
+- `application.version`: identidade de produto compilada (`engine_version`) e token SemVer do `.proj`; `core_abi_checked=false`.
+- `application.starting`: intenção/mode, com `core_linked=false`.
+- `project.document_validated`: schema/metadados validados; **não** resolução segura de recursos.
+- `project.engine_compatibility`: classifica `same_version` ou uma compatibilidade exata autorizada pela política compilada `shared/compatibility_policy.zig`; a lista no manifesto é apenas declaração e incompatibilidade gera `project.engine_incompatible`.
+- `distribution.manifest_corrupted` / `distribution.invalid`: bytes do manifesto divergentes versus tabela/hash/contratos inválidos ou ausentes.
+- `graphics.config_resolved`: 27 valores concretos, overrides e identidade de tabela; `gpu_created=false`, `capabilities_checked=false`.
+- `editor.validation_complete` / `runtime.validation_complete`: escopo `document_and_presets`, fingerprint e flags explícitas de serviços ainda não carregados.
+- `runtime.check_starting` / `runtime.output` / `runtime.output_invalid` / `runtime.check_complete` / `runtime.check_failed`: supervisão pelo Editor. Os registros do filho ficam aninhados em `fields.record`, preservando origem/sessão/seq originais.
+- `application.core_unavailable`: execução real solicitada sem executor ligado na aplicação (por exemplo, sem `--frames`, ou no Editor).
+- `runtime.run_starting` / `runtime.run_complete`: laço headless determinístico; carregam contagens (`frames`, `steps`, `ticks`, `input_ticks`, `phase_remainder`), o estado final (`entities_alive`, `state_checksum`) e a cena declarada (`scene="smoke"`). Sempre carregam `gpu_created=false`, `window_created=false`, `presented_frames=0`, `play_started=false`. `runtime.run_failed` acompanha erro do executor. `state_checksum` é FNV-1a 64 sobre handles e valores de componentes em ordem de índice; não é hash de assets nem prova de gameplay.
+
+O fingerprint v4 inclui separadamente o perfil `desktop-3d-canvas-v1` e, quando presente em V3, o Renderer Profile solicitado, além do modelo normalizado completo do `.proj`, parâmetros gráficos resolvidos e manifesto validado/empacotado. Não inclui relógio, PID, sessão ou CWD. Não é assinatura/autenticação, hash de assets ou comprovação de determinismo da simulação/execução gráfica. Um `.proj` equivalente em defaults opcionais produz a mesma identidade; um projeto com configuração, Renderer Profile ou seed diferente não deve confirmá-la.
+
+### Limites da captura
+
+- 256 KiB por stream, com slack limitado de buffers da stdlib.
+- Deadline monotônico de 10 s para coleta + saída do filho.
+- Linha com até 64 KiB incluindo LF; overflow descartado até próximo LF. EOF sem LF é aceito.
+- Profundidade JSON 16; membros/coleções 512; strings limitadas ao teto da linha. UTF-8 é validado; duplicatas são recusadas. Mensagens/campos podem carregar NUL escapado como dado.
+- Entrada inválida vira diagnóstico com prefixo bruto de até 1024 bytes (string ou array de bytes conforme UTF-8), sem ser aceita como handshake.
+- Logs do filho são publicados após o término/coleta, não ao vivo num console gráfico.
+- A saída entre stdout/stderr não tem ordem global garantida. O Editor verifica ordem crescente por pipe, unicidade entre pipes e sessão consistente.
+- Máximo de 4096 frames por execução capturada, contando inválidos. Excesso gera um aviso `RecordBudgetExceeded`, descarta o restante e reprova a verificação; impede amplificação por milhares de linhas vazias/inválidas.
+
+Teto do encoder: 64 KiB incluindo LF. Mensagens acima de 4096 bytes são truncadas em fronteira UTF-8 e sinalizadas. Se os campos de um registro excederem o teto, substitui-se o registro por aviso `log.record_too_large`, não por JSON parcial. Esse sink é síncrono de bootstrap, não a fila de logs de workers/frame.
+
+## Política do alvo
+
+`application.target_policy` publica `host_platform`, `backend_requested`, `decision`, `authoring_domains=["scene_3d","ui_canvas"]`, `scene_2d_supported=false`, `renderer_linked=false` e `gpu_created=false`. Não é lista de GPUs/backends implementados.
+
+Em validação de documento, é permitido inspecionar projeto D3D no Linux; a decisão será `backend_not_on_platform`. Em execução normal, essa decisão e `backend_out_of_scope` (Metal/WebGPU v1) causam `application.backend_unsupported`/exit 4, antes de qualquer device. Uma API elegível também não funciona sem o adaptador real: continua exit 4 / `application.core_unavailable`. Sem fallback ou alteração do projeto.
+
+Os builds de aplicações rejeitam macOS, FreeBSD, WASI e demais alvos explicitamente. CI roda no Linux e cross-compila Windows; execução Windows nativa continua P16.
+
+## Limitações deliberadas
+
+O requisito de abertura por `.proj` e splash 800×600 com carregamento assíncrono está registrado no [ADR-004](ADR-004-project-opening-splash.md). A CLI posicional e a tarefa concorrente de preflight do documento foram implementadas, mas a tarefa ainda não está ligada ao bootstrap, não existe splash e não há associação de arquivo instalada. O [projeto de exemplo](../exemploproject/README.md) ainda não tem cena funcional. Sem `--validate-only`, abrir o `.proj` retorna erro de core indisponível em vez de fingir que o Editor está pronto.
+
+Sem Zigway/ZyntraUI ligados nesta fatia, janela, viewport, carregamento de cenas/ECS de conteúdo, assets, gameplay, sol2/Lua, hot reload, gravação atômica ou UI headless. O fixed timestep headless e a cena de fumaça embutida existem, mas não substituem um Player nem um carregador de cena. Os adaptadores reais continuam nas pendências do core/aplicações.
+
+NFC completa e validação de recursos por filesystem ainda pendentes. Caminhos não ASCII **dentro do `.proj`** continuam recusados explicitamente; o caminho de CLI até o próprio `.proj` pode conter Unicode/espaços e é testado. Se um symlink UTF-8 resolver para nome real com bytes não UTF-8, falha explicitamente com `UnsupportedProjectPathEncoding`/exit 3, sem emitir JSON inválido. Abrir em `--validate-only` nunca grava `.proj` nem instala dependências.
+
+Supervisão cobre apenas o filho imediato. Árvores de subprocessos, fechamento abrupto/SIGINT/crash do Editor e lifecycle cooperativo de Play não são cobertos. Não usar `--check-runtime` como sandbox de executável hostil.

@@ -1,0 +1,7 @@
+.{
+    .name = .corex_core,
+    .fingerprint = 0x7a80e13abf9f1b2e,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.0",
+    .paths = .{ "build.zig", "build.zig.zon", "root.zig", "lifecycle.zig", "subsystem.zig", "README.md" },
+}
