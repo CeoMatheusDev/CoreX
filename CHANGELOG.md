@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Adopted `corex_core` in the Editor: added `editor/src/editor_session.zig` with a concrete `editor.session` subsystem (document load → scope policy → distribution verification → ready) registered into a `core.subsystem.Registry(4)`, plus `EditorLifecycle` in `editor_lifecycle.zig`. The Editor now consumes the shared Core lifecycle; 40/40 Editor tests pass.
 - Added the root `VERSION` authority, strict native Zig parsing/comparison, validated release transitions, and the `corex-version` CLI with dry-run support.
 - Injected the CoreX product identity into the root, Editor, and Runtime builds and added `--version` to the application executables.
 - Generated and validated a distribution manifest with an explicit project-version compatibility allow-list; centralized Editor/Runtime compatibility classification and corruption/invalid-distribution diagnostics.

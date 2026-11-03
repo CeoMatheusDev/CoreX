@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) void {
     preflight_options.addOption([]const u8, "repository_root", repository_root);
     const mod = b.createModule(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize });
     mod.addImport("corex_app", shared.module("corex_app"));
+    mod.addImport("corex_core", core_dep.module("corex_core"));
+    mod.addImport("corex_scene", scene_dep.module("corex_scene"));
     mod.addOptions("preflight_options", preflight_options);
     const exe = b.addExecutable(.{ .name = "CoreXEditor", .root_module = mod });
     b.installArtifact(exe);
