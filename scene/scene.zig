@@ -73,14 +73,13 @@ pub fn Scene(comptime WorldT: type) type {
             // runtime/src/headless_app.zig for scene loading from files.
         }
 
-        /// Serialize the Scene's current World state to a descriptor.
-        /// Used for saving, replay, or exporting scene data.
+        /// Serialize the Scene's current World state to a content-format JSON
+        /// descriptor. Real implementation via `content_serializer`; round-trips
+        /// with `content_loader`. Caller owns the returned bytes.
         pub fn saveDescriptor(self: *const Self, allocator: std.mem.Allocator) anyerror![]u8 {
-            // Stub: in full implementation this builds a format.SceneFile
-            // from self.world_state and serializes to JSON.
-            // For now returns a minimal descriptor that preserves config.
-            const json = try std.fmt.allocPrint(allocator, "{{\"entity_capacity\": {}, \"system_capacity\": {}}}", .{ self.world_state.entityCapacity(), self.systems.capacity() });
-            return json;
+            const serializer = @import("content_serializer.zig");
+            const stores_type = @TypeOf(self.world_state.stores);
+            return serializer.serialize(stores_type, allocator, &self.world_state, @intCast(self.systems.capacity()));
         }
 
         pub fn systemCount(self: *const Self) usize {
