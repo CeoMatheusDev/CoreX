@@ -1,4 +1,13 @@
-# Shared application contracts
+# CoreX Shared Contracts
+
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
+
+Reusable Zig 0.17.0 contract layer for project documents, presets, product identity, bootstrap protocol, and the private Zig-to-C23 graphics DTO.
+
+> [!NOTE]
+> Version domains are independent: product version, package SemVer, project schema, C ABI, and Zig toolchain versions must not be conflated.
+
+---
 
 `shared/` is the reusable Zig 0.17.0 contract layer for CoreX project documents (`.proj` v1/v2/v3), presets, the private Zig↔C23 graphics-configuration DTO, product identity, and bootstrap protocol. The independent Editor and Runtime bootstraps consume this package to validate documents; it does not depend on a window system, GPU, Lua, or the legacy application build.
 
