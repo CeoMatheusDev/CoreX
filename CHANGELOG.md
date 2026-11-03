@@ -4,6 +4,7 @@ This file records notable CoreX product changes. `VERSION` is the product-versio
 
 ## Unreleased
 
+- Extended `scene/ecs/query.zig` with NOT exclusions: `each`/`count`/`Iterator` now take a second tuple `NotT` of excluded component types (e.g. `each(WorldT, world, .{Position}, .{Velocity}, cb)` matches entities with Position but without Velocity). Scene tests: 74/74.
 - Added `scene/ecs/transform.zig`: transform hierarchy with `LocalTransform` and `WorldTransform` components, propagated through the parent/child graph via `propagateTransforms` (roots: world=local; children: world=parent.world+local). Built on `hierarchy.zig`, no World changes. Scene tests: 72/72.
 - Added `scene/ecs/query.zig`: allocation-free multi-component queries (`each`, `Iterator`, `count`) over any `World(StoresT)`. The first type in the query tuple drives iteration (put the rarest component first); remaining types are probed with O(1) sparse-set lookups. Scene tests: 68/68.
 - Added `scene/ecs/hierarchy.zig`: parent/child entity hierarchy as regular `SparseSet` components (`Parent`, `Children`) with cycle-safe reparenting, root detection, and `onDestroy` child reparenting to the grandparent. Any `World(Stores)` declaring these components gets hierarchy. Scene tests: 65/65.
