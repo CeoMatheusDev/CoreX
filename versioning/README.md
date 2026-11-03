@@ -1,4 +1,13 @@
-# CoreX versioning CLI
+# CoreX Versioning CLI
+
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
+
+Native Zig tooling for validating and updating the CoreX product version stored in the repository-root VERSION file.
+
+> [!NOTE]
+> The VERSION file is the single source of truth for the product version. Package versions remain independent.
+
+---
 
 The release format and transition policy are defined in [`../VERSIONING.md`](../VERSIONING.md). The repository-root `VERSION` file is the single source of the CoreX product version. Package versions are separate: do not edit package `.version` fields to mirror the product channel or revision.
 
