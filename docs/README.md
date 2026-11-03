@@ -1,4 +1,13 @@
-# Índice da documentação CoreX
+# CoreX Documentation
+
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-f7a41d?logo=zig&logoColor=white) ![C23](https://img.shields.io/badge/C-C23-00599C?logo=c) ![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-555)
+
+The technical documentation hub for CoreX: implementation status, architecture, project contracts, engineering decisions, and validation evidence.
+
+> [!NOTE]
+> Use STATUS.md for current implementation claims. Design proposals and historical test results must not be treated as proof of current functionality.
+
+---
 
 Use este índice para localizar contratos, evidências de implementação, decisões arquiteturais e registros históricos. Para a visão geral e os comandos de build, comece pelo [README da raiz](../README.md).
 
