@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/Logo minimalista COREX ENGINE.png" alt="CoreX Engine logo" width="720">
+  <img src="assets/LogoBanner_CoreX_1.png" alt="CoreX Engine logo" width="720">
 </p>
 
 <h1 align="center">CoreX Engine</h1>
