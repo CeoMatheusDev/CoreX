@@ -64,6 +64,28 @@ fn markAncestors(comptime WorldT: type, world: *WorldT, entity: Entity, comptime
     }
 }
 
+/// Reusable traversal storage. The caller owns this value and its allocator;
+/// it must outlive calls using it and must not be shared concurrently. Reserve
+/// up to the world's live entity count to avoid traversal allocations for a
+/// valid hierarchy; component insertion may still allocate independently.
+pub const PropagationScratch = struct {
+    allocator: std.mem.Allocator,
+    stack: std.ArrayList(Entity) = .empty,
+
+    pub fn init(allocator: std.mem.Allocator) PropagationScratch {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn reserve(self: *PropagationScratch, max_entities: usize) !void {
+        try self.stack.ensureTotalCapacity(self.allocator, max_entities);
+    }
+
+    pub fn deinit(self: *PropagationScratch) void {
+        self.stack.deinit(self.allocator);
+        self.* = undefined;
+    }
+};
+
 /// Original best-effort API. Use `tryPropagateDirty` to observe failures;
 /// on failure a marker remains available for retry rather than being lost.
 pub fn propagateDirty(comptime WorldT: type, world: *WorldT) void {
@@ -75,7 +97,9 @@ pub fn propagateDirty(comptime WorldT: type, world: *WorldT) void {
 /// transforms may already have been updated; treat them as provisional until
 /// the call succeeds. The hierarchy must have reciprocal, live parent links.
 pub fn tryPropagateDirty(comptime WorldT: type, world: *WorldT) !void {
-    return propagateImpl(WorldT, world, false);
+    var scratch = PropagationScratch.init(world.allocator);
+    defer scratch.deinit();
+    return propagateImpl(WorldT, world, false, &scratch);
 }
 
 /// Like `tryPropagateDirty`, but a node without a local transform passes its
@@ -84,13 +108,20 @@ pub fn tryPropagateDirty(comptime WorldT: type, world: *WorldT) !void {
 /// outside a marked subtree must already be current. Both variants report
 /// `TransformOverflow` and keep a retryable root marker on failure.
 pub fn tryPropagateDirtyWithImplicitIdentity(comptime WorldT: type, world: *WorldT) !void {
-    return propagateImpl(WorldT, world, true);
+    var scratch = PropagationScratch.init(world.allocator);
+    defer scratch.deinit();
+    return propagateImpl(WorldT, world, true, &scratch);
 }
 
-fn propagateImpl(comptime WorldT: type, world: *WorldT, comptime implicit_identity: bool) !void {
-    var stack: std.ArrayList(Entity) = .empty;
-    defer stack.deinit(world.allocator);
+/// The same checked implicit-identity propagation, with caller-owned traversal
+/// storage retained between calls. A failed call may leave stack contents, but
+/// the next call clears them before use and keeps the same retry semantics.
+pub fn tryPropagateDirtyWithImplicitIdentityUsingScratch(comptime WorldT: type, world: *WorldT, scratch: *PropagationScratch) !void {
+    return propagateImpl(WorldT, world, true, scratch);
+}
 
+fn propagateImpl(comptime WorldT: type, world: *WorldT, comptime implicit_identity: bool, scratch: *PropagationScratch) !void {
+    const stack = &scratch.stack;
     while (world.componentCount(TransformDirty) != 0) {
         const marked = world.entities(TransformDirty);
         const candidate = marked[marked.len - 1];
@@ -113,7 +144,7 @@ fn propagateImpl(comptime WorldT: type, world: *WorldT, comptime implicit_identi
         }
 
         stack.clearRetainingCapacity();
-        try stack.append(world.allocator, root);
+        try stack.append(scratch.allocator, root);
         var visited: usize = 0;
         const alive: usize = world.aliveCount();
         while (stack.pop()) |entity| {
@@ -133,7 +164,7 @@ fn propagateImpl(comptime WorldT: type, world: *WorldT, comptime implicit_identi
                 if (!world.isAlive(child)) return error.InvalidHierarchy;
                 const parent = hierarchy.getParent(WorldT, world, child) orelse return error.InvalidHierarchy;
                 if (!parent.eql(entity)) return error.InvalidHierarchy;
-                try stack.append(world.allocator, child);
+                try stack.append(scratch.allocator, child);
             }
             // Keep the root marked until the whole subtree succeeds; after a
             // failure it covers any descendant markers already cleared.
@@ -749,4 +780,86 @@ test "implicit identity propagation reports corrupted parent cycles and keeps ma
     try tryMarkDirty(TestWorld, &world, a);
     try testing.expectError(error.CycleDetected, tryPropagateDirtyWithImplicitIdentity(TestWorld, &world));
     try testing.expect(world.has(TransformDirty, a));
+}
+
+test "reusable scratch supports allocation-free incremental propagation and retry" {
+    var counter = @import("../testing_allocator.zig").CountingAllocator{ .backing = testing.allocator };
+    const allocator = counter.allocator();
+    var world = try TestWorld.init(allocator, 8);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, allocator, &world);
+    var scratch = PropagationScratch.init(allocator);
+    defer scratch.deinit();
+    const leaf = try world.create();
+    const middle = try world.create();
+    const root = try world.create();
+    try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(10, 0, 0) });
+    try world.add(t3d.LocalTransform3D, leaf, .{ .matrix = .translation(2, 0, 0) });
+    try hierarchy.setParent(TestWorld, allocator, &world, middle, leaf);
+    try hierarchy.setParent(TestWorld, allocator, &world, root, middle);
+    try tryMarkDirty(TestWorld, &world, root);
+    try scratch.reserve(world.aliveCount());
+    try tryPropagateDirtyWithImplicitIdentityUsingScratch(TestWorld, &world, &scratch);
+    counter.resetCounters();
+    for (0..100) |_| {
+        world.get(t3d.LocalTransform3D, root).?.matrix.m03 += 1;
+        try tryMarkDirty(TestWorld, &world, root);
+        try tryPropagateDirtyWithImplicitIdentityUsingScratch(TestWorld, &world, &scratch);
+    }
+    try testing.expectEqual(@as(i32, 112), world.getConst(t3d.WorldTransform3D, leaf).?.matrix.m03);
+    try testing.expectEqual(@as(usize, 0), counter.allocations);
+
+    world.get(t3d.LocalTransform3D, root).?.matrix.m03 = std.math.maxInt(i32);
+    try tryMarkDirty(TestWorld, &world, root);
+    try testing.expectError(error.TransformOverflow, tryPropagateDirtyWithImplicitIdentityUsingScratch(TestWorld, &world, &scratch));
+    try testing.expect(world.has(TransformDirty, root));
+    world.get(t3d.LocalTransform3D, leaf).?.matrix.m03 = -1;
+    try tryPropagateDirtyWithImplicitIdentityUsingScratch(TestWorld, &world, &scratch);
+    try testing.expectEqual(std.math.maxInt(i32) - 1, world.getConst(t3d.WorldTransform3D, leaf).?.matrix.m03);
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
+    try testing.expectEqual(@as(usize, 0), counter.allocations);
+    try testing.expectEqual(@as(usize, 0), counter.allocation_attempts);
+    try testing.expectEqual(@as(usize, 0), counter.resize_attempts);
+    try testing.expectEqual(@as(usize, 0), counter.remap_attempts);
+}
+
+test "reusable propagation scratch releases resources for every allocation failure" {
+    try testing.checkAllAllocationFailures(testing.allocator, struct {
+        fn probe(allocator: std.mem.Allocator) !void {
+            var world = try TestWorld.init(allocator, 8);
+            defer world.deinit();
+            defer hierarchy.clear(TestWorld, allocator, &world);
+            var scratch = PropagationScratch.init(allocator);
+            defer scratch.deinit();
+            const root = try world.create();
+            const child = try world.create();
+            try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(10, 0, 0) });
+            try hierarchy.setParent(TestWorld, allocator, &world, root, child);
+            try tryMarkDirty(TestWorld, &world, root);
+            try scratch.reserve(world.aliveCount());
+            tryPropagateDirtyWithImplicitIdentityUsingScratch(TestWorld, &world, &scratch) catch |err| {
+                try testing.expect(world.has(TransformDirty, root));
+                return err;
+            };
+            try testing.expectEqual(@as(i32, 10), world.getConst(t3d.WorldTransform3D, child).?.matrix.m03);
+        }
+    }.probe, .{});
+}
+
+test "scratch allocator is independent and retryable after traversal allocation fails" {
+    var world = try TestWorld.init(testing.allocator, 4);
+    defer world.deinit();
+    defer hierarchy.clear(TestWorld, testing.allocator, &world);
+    var failing = testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 0 });
+    var scratch = PropagationScratch.init(failing.allocator());
+    defer scratch.deinit();
+    const root = try world.create();
+    try world.add(t3d.LocalTransform3D, root, .{ .matrix = .translation(11, 0, 0) });
+    try tryMarkDirty(TestWorld, &world, root);
+    try testing.expectError(error.OutOfMemory, tryPropagateDirtyWithImplicitIdentityUsingScratch(TestWorld, &world, &scratch));
+    try testing.expect(world.has(TransformDirty, root));
+    failing.fail_index = std.math.maxInt(usize);
+    try tryPropagateDirtyWithImplicitIdentityUsingScratch(TestWorld, &world, &scratch);
+    try testing.expectEqual(@as(i32, 11), world.getConst(t3d.WorldTransform3D, root).?.matrix.m03);
+    try testing.expectEqual(@as(usize, 0), dirtyCount(TestWorld, &world));
 }
