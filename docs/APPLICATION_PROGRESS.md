@@ -1,6 +1,6 @@
 # Editor/Runtime — registro de progresso
 
-**Atualizado:** 2026-11-03. Este arquivo é um registro cronológico de evidências por etapa, não um checklist de conclusão. Contagens e estados de CI em cada seção descrevem o momento em que aquela etapa foi registrada; não substituem a validação atual.
+**Atualizado:** 2026-11-04. Este arquivo é um registro cronológico de evidências por etapa, não um checklist de conclusão. Contagens e estados de CI em cada seção descrevem o momento em que aquela etapa foi registrada; não substituem a validação atual.
 
 ## Estado mais recente registrado
 
@@ -8,16 +8,30 @@
 - Editor e Runtime mantêm builds/testes próprios. Seus módulos de projeto, CLI e descoberta não equivalem a Editor/Runtime gráficos nem a carregadores completos de conteúdo.
 - O Editor/Runtime ainda não têm Surface Vulkan, Device, Swapchain ou apresentação validados. A integração depende de API upstream revisada e validação nativa; não foram alterados pins para contornar essa dependência.
 - Para o estado resumido, consulte [`STATUS.md`](STATUS.md); para contratos e fronteiras, consulte [`ARCHITECTURE.md`](ARCHITECTURE.md). Abaixo, cada seção preserva o contexto histórico da respectiva fatia.
-- Revisão documental desta fatia: criados o índice `docs/README.md` e o guia `CONTRIBUTING.md`, corrigida a colisão ADR-004/ADR-005, removidas alegações de protótipo tratadas como produto e atualizados status, arquitetura, integrações e registros históricos. As checagens locais encontraram 0 links Markdown internos quebrados e 0 problemas na hierarquia de títulos em 37 arquivos; `git diff --check` passou.
+- Revisão documental anterior: criados o índice `docs/README.md` e o guia `CONTRIBUTING.md`, corrigida a colisão ADR-004/ADR-005, removidas alegações de protótipo tratadas como produto e atualizados status, arquitetura, integrações e registros históricos. As checagens locais encontraram 0 links Markdown internos quebrados e 0 problemas na hierarquia de títulos em 37 arquivos; `git diff --check` passou.
 - `zig fmt --check` passa, desde a fatia de recuperação abaixo, em todos os caminhos Zig rastreados — inclusive `src/ecs/system.zig`, `src/memory/allocator.zig` e `src/scripting/lua_allocator.zig`, que antes falhavam o parser do Zig 0.17.0. O cache gerado `zig-pkg/` não é rastreado e não entra no portão.
-- A fatia atual adiciona codec, aritmética checked e propagação estática de transforms 3D ao Runtime headless. Evidências locais em Debug e ReleaseSafe: Core **11/11**, Scene **160/160**, Shared **64/64**, Editor **40/40**, Runtime **40/40**, `tools/zig` **43/43** de integração e Python **33/33**. O checksum da fumaça de 120 frames permanece `4676086859710612434`. Isso não valida gameplay, janela nativa ou Vulkan.
+- A fatia atual acrescenta translação 3D opt-in por tick e scratch reutilizável à propagação headless. Evidências locais em Debug e ReleaseSafe: Core **11/11**, Scene **164/164**, Shared **64/64**, Editor **40/40**, Runtime **49/49**, `tools/zig` **45/45** de integração e Python **33/33**. O checksum da fumaça de 120 frames permanece `4676086859710612434`. Isso não valida gameplay, janela nativa ou Vulkan.
 - `zig build check -Dtarget=x86_64-windows-gnu` compilou Shared, Editor, Runtime e `tools/zig`. Isso é cross-compilação; nenhum executável Windows foi executado.
 - As builds instaladas nativas do Editor e Runtime passaram, e `tools/test_bootstrap.py` passou **33/33** testes contra os binários reais, incluindo handshake entre processos. Isso valida o protocolo de bootstrap, não gameplay, UI ou renderização GPU.
 - Na etapa inicial do pacote Scene, a CI remota passou em Contracts e Legacy Linux: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542060627) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41542061137). A revisão documental histórica `320afac` também passou em ambos: [Contracts](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287660) e [Legacy Linux](https://github.com/CeoMatheusDev/CoreX/actions/runs/41543287419). Esses links não são evidência da fatia atual.
-- `zig build test` na raiz passou nativamente (**221/221** em Debug e ReleaseSafe: 46 legado + 11 Core + 160 Scene + 4 adaptadores Zigway) com pacotes preparados por `tools/prepare_legacy_deps.sh`, que verifica os hashes declarados. A resolução direta pelo próprio build não foi exercitada; ver a fatia mais recente abaixo.
-- Os casos de integração Editor/Runtime também existem em Zig (`tools/zig/test_bootstrap_cli.zig`), com sondas nativas em vez de shebang Python; são **43** casos atualmente, incluindo cena 3D. A referência Python continua em CI.
+- `zig build test` na raiz passou nativamente (**225/225** em Debug e ReleaseSafe: 46 legado + 11 Core + 164 Scene + 4 adaptadores Zigway) com pacotes preparados por `tools/prepare_legacy_deps.sh`, que verifica os hashes declarados. A resolução direta pelo próprio build não foi exercitada; ver a fatia mais recente abaixo.
+- Os casos de integração Editor/Runtime também existem em Zig (`tools/zig/test_bootstrap_cli.zig`), com sondas nativas em vez de shebang Python; são **45** casos atualmente, incluindo movimento 3D. A referência Python continua em CI.
 
 ## Registro cronológico
+
+## Continuação — movimento 3D headless incremental (2026-11-04)
+
+**Escopo e compatibilidade.** O componente opt-in `transform_velocity3d` contém deltas Q16.16 i32 de translação no espaço do pai por tick fixo, sem alterar escala/rotação ou o `position` escalar. Campos ausentes são zero; velocidade sem local é inerte, mas consta do checksum. Worlds são preparados após a carga e, nos ticks, apenas subárvores marcadas são propagadas pai→filho. Uma extensão versionada e condicional do checksum cobre velocidades; entradas antigas sem esse componente mantêm seus checksums. Não houve mudança no schema `.proj` nem nas APIs Scene existentes.
+
+**Segurança e desempenho.** Cada entidade verifica os três eixos e marca dirty antes de mutar; overflow local ou na composição retorna `TransformOverflow`, mas o tick completo não é transacional. A pilha de travessia agora pode ser reutilizada com allocator pertencente ao chamador e retry após erro. O Runtime reserva scratch e capacidade de componentes no setup para suas entidades, hierarquia, presença de componentes e velocidades fixas; testes bloqueiam e contam tentativas de alloc/resize/remap durante os ticks. Isso não garante ausência de alocação em Worlds arbitrários ou após alterações da topologia. O trabalho inclui scan das velocidades, subárvores afetadas e percursos de ancestrais; os systems escalares também percorrem os índices de entidade.
+
+**Validação local Linux x86_64, Zig 0.17.0.** Debug, ReleaseSafe e ReleaseFast passaram: raiz **225/225**, Core **11/11**, Scene **164/164**, Shared **64/64**, Editor **40/40**, Runtime **49/49**, ferramentas Zig **51/51**, processos Zig **45/45** e Python **33/33**. `zig build validate`, formatação e `git diff --check` também passaram. Checks de instalador, preparadores, inventário, captura, fixtures e reprodutibilidade do manifesto foram executados separadamente.
+
+**Evidências adicionais.** Um oracle Python independente de matrizes e FNV comparou 240 florestas pseudoaleatórias com processos reais em cada modo, incluindo pais adiante, ordem de irmãos explícita, lacunas de identidade e componentes escalares. Uma cadeia de 20.000 entidades/10 ticks executou duas vezes em Debug, ReleaseSafe e ReleaseFast com checksum `6203743304960945422`; uma hierarquia larga com 19.999 filhos móveis também executou duas vezes em cada modo, checksum `11472849919742265359`. Ambas preservaram bytes e mtime; durações locais são observações, não metas de produto. O teste de falha em cada alocação inclui preparação e movimento; overflow e retry também são cobertos.
+
+**Empacotamento e plataformas.** Scene extraída dos pacotes gerados por `zig fetch` passou **164/164** em cada um dos três modos. Raiz, Core, Scene, Shared, Editor, Runtime e ferramentas foram cross-compilados para Windows x86_64 GNU; Runtime também em ReleaseSafe. Isso não é execução nativa Windows. As dependências legadas usadas localmente foram preparadas com hashes verificados; a resolução direta pelo build não foi exercitada. Essas evidências locais não substituem os checks remotos.
+
+**Limites.** Não há edição de cena, rotação/escala animada, física, gameplay, janela, GPU ou apresentação. O acesso a Surface Vulkan permanece bloqueado pela API pública do Zigway fixado.
 
 ## Continuação — conteúdo e propagação 3D headless (2026-11-03)
 

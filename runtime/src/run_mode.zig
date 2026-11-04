@@ -156,7 +156,10 @@ pub fn run(allocator: std.mem.Allocator, request: Request) anyerror!Report {
     // World owns its stores, not the child slices inside Children. This runs
     // on success and every error path, before the Scene frees its World.
     defer scene.hierarchy.clear(headless_app.World, smoke.world().allocator, smoke.world());
+    var transform_scratch = scene.transform_dirty.PropagationScratch.init(allocator);
+    defer transform_scratch.deinit();
     try headless_app.installSystems(&smoke);
+    try headless_app.installDynamicTransforms(&smoke, &transform_scratch);
 
     var registry = core.subsystem.Registry(3){};
     try registry.register(core.subsystem.Subsystem.adopt(Input, "runtime.input", &input));
@@ -179,6 +182,7 @@ pub fn run(allocator: std.mem.Allocator, request: Request) anyerror!Report {
         try headless_app.populate(&smoke);
     }
     try headless_app.prepareTransforms(&smoke);
+    try headless_app.prepareDynamicTransforms(&smoke, &transform_scratch);
 
     var steps: u64 = 0;
     var frames: u32 = 0;
@@ -522,7 +526,7 @@ test "headless 3D content rejects raw derived state invalid input and overflow" 
     }
 }
 
-test "headless 3D preparation cleans up for every allocation failure" {
+test "headless 3D preparation and motion clean up for every allocation failure" {
     var fixture = try TestSceneFile.init();
     defer fixture.deinit();
     // A wide forest triggers capacity growth in entity, dirty and computed
@@ -533,7 +537,7 @@ test "headless 3D preparation cleans up for every allocation failure" {
     for (0..24) |index| {
         if (index != 0) try json.writer.writeByte(',');
         if (index == 23) {
-            try json.writer.writeAll("{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":65536}]}");
+            try json.writer.writeAll("{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":65536},{\"kind\":\"transform_velocity3d\",\"x\":1}]}");
         } else {
             try json.writer.writeAll("{\"parent_index\":23}");
         }
@@ -568,4 +572,54 @@ test "headless 3D preparation handles a deep forward hierarchy" {
     const report = try run(testing.allocator, .{ .frames = 2, .scene_path = fixture.path, .io = testing.io });
     try testing.expectEqual(@as(u32, count), report.entities_alive);
     try testing.expectEqual(@as(u64, 2), report.ticks);
+}
+
+test "headless 3D velocity advances each tick with deterministic world state" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    const content =
+        \\{"entities":[{"parent_index":1,"components":[{"kind":"local_transform3d","m03":131072},{"kind":"transform_velocity3d","x":65536,"y":-32768}]},{"parent_index":3},{"parent_index":3,"components":[{"kind":"local_transform3d","m13":196608}]},{"components":[{"kind":"local_transform3d","m00":0,"m01":-65536,"m10":65536,"m11":0,"m03":65536},{"kind":"transform_velocity3d","x":32768,"y":65536}]},{"components":[{"kind":"transform_velocity3d","x":17}]},{"components":[{"kind":"local_transform3d","m23":-65536},{"kind":"transform_velocity3d"}]}]}
+    ;
+    try fixture.write(content);
+    const request: Request = .{ .frames = 3, .scene_path = fixture.path, .io = testing.io };
+    const first = try run(testing.allocator, request);
+    const repeat = try run(testing.allocator, request);
+    try testing.expectEqualDeep(first, repeat);
+    try testing.expectEqual(@as(u32, 6), first.entities_alive);
+    try testing.expectEqual(@as(u64, 3), first.ticks);
+    // Verified against an independent matrix and byte-level FNV calculation.
+    if (@import("builtin").cpu.arch.endian() == .little) {
+        try testing.expectEqual(@as(u64, 16381086298403591865), first.state_checksum);
+    }
+    const later = try run(testing.allocator, .{ .frames = 4, .scene_path = fixture.path, .io = testing.io });
+    try testing.expect(first.state_checksum != later.state_checksum);
+}
+
+test "3D velocity without a local transform is inert but represented in checksum" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    try fixture.write("{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"x\":1}]}]}");
+    const first = try run(testing.allocator, .{ .frames = 1, .scene_path = fixture.path, .io = testing.io });
+    const later = try run(testing.allocator, .{ .frames = 2, .scene_path = fixture.path, .io = testing.io });
+    try testing.expectEqual(first.state_checksum, later.state_checksum);
+    try fixture.write("{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"x\":2}]}]}");
+    const changed = try run(testing.allocator, .{ .frames = 1, .scene_path = fixture.path, .io = testing.io });
+    try testing.expect(first.state_checksum != changed.state_checksum);
+}
+
+test "headless 3D velocity rejects invalid content and runtime overflow" {
+    var fixture = try TestSceneFile.init();
+    defer fixture.deinit();
+    const cases = [_]struct { json: []const u8, expected: anyerror }{
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"x\":2147483648}]}]}", .expected = error.TypeMismatch },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"x\":1.5}]}]}", .expected = error.InvalidSceneData },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"w\":1}]}]}", .expected = error.UnknownFieldName },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\"},{\"kind\":\"transform_velocity3d\"}]}]}", .expected = error.DuplicateEntityComponent },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":2147483647},{\"kind\":\"transform_velocity3d\",\"x\":1}]}]}", .expected = error.TransformOverflow },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":2147483645},{\"kind\":\"transform_velocity3d\",\"x\":2}]},{\"parent_index\":0,\"components\":[{\"kind\":\"local_transform3d\",\"m03\":1}]}]}", .expected = error.TransformOverflow },
+    };
+    for (cases) |case| {
+        try fixture.write(case.json);
+        try testing.expectError(case.expected, run(testing.allocator, .{ .frames = 1, .scene_path = fixture.path, .io = testing.io }));
+    }
 }

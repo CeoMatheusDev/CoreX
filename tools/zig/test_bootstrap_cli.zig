@@ -1198,6 +1198,73 @@ test "runtime returns structured errors for invalid or overflowing 3D transforms
     }
 }
 
+test "runtime advances 3D transforms through hierarchy deterministically and read-only" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    const path = try std.fs.path.join(a, &.{ f.directory, "motion3d.scene" });
+    defer a.free(path);
+    const content =
+        \\{"entities":[{"parent_index":1,"components":[{"kind":"local_transform3d","m03":131072},{"kind":"transform_velocity3d","x":65536,"y":-32768}]},{"parent_index":3},{"parent_index":3,"components":[{"kind":"local_transform3d","m13":196608}]},{"components":[{"kind":"local_transform3d","m00":0,"m01":-65536,"m10":65536,"m11":0,"m03":65536},{"kind":"transform_velocity3d","x":32768,"y":65536}]},{"components":[{"kind":"transform_velocity3d","x":17}]},{"components":[{"kind":"local_transform3d","m23":-65536},{"kind":"transform_velocity3d"}]}]}
+    ;
+    try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = content });
+    const before = try Io.Dir.cwd().statFile(io, path, .{});
+    var first = Run.init();
+    defer first.deinit();
+    try f.runApp(&first, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "3", "--scene", path }, .{ .expected = 0 });
+    const complete = try first.event("runtime.run_complete");
+    try expectIntField(complete, "entities_alive", 6);
+    try expectIntField(complete, "ticks", 3);
+    try expectIntField(complete, "presented_frames", 0);
+    try expectBoolField(complete, "gpu_created", false);
+    try expectBoolField(complete, "play_started", false);
+    const checksum = try uintField(complete, "state_checksum");
+    if (builtin.cpu.arch.endian() == .little) {
+        try std.testing.expectEqual(@as(u64, 16381086298403591865), checksum);
+    }
+    const after = try Io.Dir.cwd().statFile(io, path, .{});
+    try std.testing.expectEqual(before.size, after.size);
+    try std.testing.expectEqual(before.mtime.nanoseconds, after.mtime.nanoseconds);
+    const retained = try Io.Dir.cwd().readFileAlloc(io, path, a, .limited(content.len + 1));
+    defer a.free(retained);
+    try std.testing.expectEqualStrings(content, retained);
+
+    var repeat = Run.init();
+    defer repeat.deinit();
+    try f.runApp(&repeat, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "3", "--scene", path }, .{ .expected = 0 });
+    try std.testing.expectEqual(checksum, try uintField(try repeat.event("runtime.run_complete"), "state_checksum"));
+    var later = Run.init();
+    defer later.deinit();
+    try f.runApp(&later, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "4", "--scene", path }, .{ .expected = 0 });
+    try std.testing.expect(checksum != try uintField(try later.event("runtime.run_complete"), "state_checksum"));
+}
+
+test "runtime reports invalid and overflowing 3D velocity without final state" {
+    try requirePosix();
+    var f = try Fixture.init();
+    defer f.deinit();
+    const path = try std.fs.path.join(a, &.{ f.directory, "invalid_motion3d.scene" });
+    defer a.free(path);
+    const cases = [_]struct { json: []const u8, code: []const u8 }{
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"x\":2147483648}]}]}", .code = "TypeMismatch" },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"x\":1.5}]}]}", .code = "InvalidSceneData" },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\",\"w\":1}]}]}", .code = "UnknownFieldName" },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"transform_velocity3d\"},{\"kind\":\"transform_velocity3d\"}]}]}", .code = "DuplicateEntityComponent" },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":2147483647},{\"kind\":\"transform_velocity3d\",\"x\":1}]}]}", .code = "TransformOverflow" },
+        .{ .json = "{\"entities\":[{\"components\":[{\"kind\":\"local_transform3d\",\"m03\":2147483645},{\"kind\":\"transform_velocity3d\",\"x\":2}]},{\"parent_index\":0,\"components\":[{\"kind\":\"local_transform3d\",\"m03\":1}]}]}", .code = "TransformOverflow" },
+    };
+    for (cases) |case| {
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = case.json });
+        var run = Run.init();
+        defer run.deinit();
+        try f.runApp(&run, f.runtime, &.{ "--project", f.project_path, "--headless", "--frames", "1", "--scene", path }, .{ .expected = 70 });
+        try expectTextField(try run.event("runtime.run_failed"), "code", case.code);
+        try std.testing.expectEqual(@as(usize, 0), run.countOf("runtime.run_complete"));
+        const retained = try Io.Dir.cwd().readFileAlloc(io, path, run.allocator(), .limited(case.json.len + 1));
+        try std.testing.expectEqualStrings(case.json, retained);
+    }
+}
+
 test "execution flags are explicit bounded and rejected otherwise" {
     try requirePosix();
     var f = try Fixture.init();

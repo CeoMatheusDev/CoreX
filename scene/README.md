@@ -56,7 +56,7 @@ const json = try corex_scene.content_serializer.serialize(Stores, allocator, &wo
 defer allocator.free(json);
 ```
 
-`Scene.loadWorld` e `scene.loader.Loader.loadWorld` são APIs legadas ainda não ligadas a esse caminho de conteúdo; não as use como carregadores de conteúdo. O Runtime headless usa `content_loader` em modo somente leitura, com `position`, `velocity`, `age`, hierarquia e `local_transform3d` opcionais. O `Position` dos systems de fumaça é independente dos transforms 3D.
+`Scene.loadWorld` e `scene.loader.Loader.loadWorld` são APIs legadas ainda não ligadas a esse caminho de conteúdo; não as use como carregadores de conteúdo. O Runtime headless usa `content_loader` em modo somente leitura, com `position`, `velocity`, `age`, hierarquia, `local_transform3d` e `transform_velocity3d` opcionais. O `Position` dos systems de fumaça é independente dos transforms 3D; os detalhes do movimento 3D limitado estão no [README do Runtime](../runtime/README.md#deterministic-headless-execution---frames).
 
 ### Codec de transform 3D
 
@@ -79,7 +79,18 @@ A composição usa produtos Q16.16 arredondados individualmente para o inteiro m
 
 Para limitar o trabalho à subárvore alterada, `tryMarkDirty` marca apenas a entidade; seus ancestrais devem ter transforms mundiais válidos. Marcar uma folha assim não recalcula irmãos. `tryPropagateDirty` recalcula em ordem pai→filho mesmo se os índices estiverem invertidos, e mantém o comportamento legado de ignorar nós sem transform local. A variante aditiva `tryPropagateDirtyWithImplicitIdentity` atravessa essas lacunas, copiando o world do pai; sem ancestral transformado ela remove um world obsoleto. Para subárvores, ancestrais externos já devem estar atualizados.
 
-Ambas as variantes `try` detectam `TransformOverflow`. Em caso de erro preservam uma marca para nova tentativa, mas transforms já calculados são provisórios até o sucesso. `propagateDirty` continua `void` e best-effort, sem informar falhas; prefira a versão `try` quando for necessário confirmá-las. Ciclos e handles obsoletos não provocam laços infinitos. Com zero marcas a propagação não aloca; com marcas, o trabalho inclui subárvores afetadas e percursos de ancestrais, sem promessa geral de O(dirty). O chamador deve marcar mudanças de transform **e reparenting**. O Runtime calcula a hierarquia 3D uma vez após carregar, antes dos ticks; esses transforms são estáticos neste modo.
+Ambas as variantes `try` detectam `TransformOverflow`. Em caso de erro preservam uma marca para nova tentativa, mas transforms já calculados são provisórios até o sucesso. `propagateDirty` continua `void` e best-effort, sem informar falhas; prefira a versão `try` quando for necessário confirmá-las. Ciclos e handles obsoletos não provocam laços infinitos. Com zero marcas a propagação não aloca; com marcas, o trabalho inclui subárvores afetadas e percursos de ancestrais, sem promessa geral de O(dirty). O chamador deve marcar mudanças de transform **e reparenting**.
+
+Para reutilizar a pilha de travessia entre chamadas, use a variante aditiva com scratch pertencente ao chamador:
+
+```zig
+var scratch = corex_scene.transform_dirty.PropagationScratch.init(allocator);
+defer scratch.deinit();
+try scratch.reserve(world.aliveCount());
+try corex_scene.transform_dirty.tryPropagateDirtyWithImplicitIdentityUsingScratch(World, &world, &scratch);
+```
+
+A reserva de `aliveCount` cobre a pilha de uma hierarquia válida; **não** reserva os stores de dirty/world, que podem alocar ao inserir componentes. O scratch retém sua capacidade mesmo após erro, pode ser reutilizado para retry e não deve ser compartilhado por chamadas concorrentes. Seu allocator pode ser distinto do allocator do World e deve permanecer válido até `deinit`. O Runtime reserva a capacidade necessária no setup para sua cena de entidades e hierarquia fixas; opcionalmente move transforms locais por tick e propaga as subárvores afetadas.
 
 ## Uso
 
